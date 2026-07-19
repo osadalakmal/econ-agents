@@ -116,10 +116,12 @@ class Simulation:
     # Public API
     # ------------------------------------------------------------------
 
-    async def run(self, rounds: int) -> list[RoundResult]:
+    async def run(self, rounds: int, on_round=None) -> list[RoundResult]:
         for _ in range(rounds):
             result = await self._run_round()
             self._results.append(result)
+            if on_round is not None:
+                await on_round(result)
         return self._results
 
     @property
