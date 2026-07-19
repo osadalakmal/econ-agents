@@ -106,11 +106,18 @@ class WeightedAction:
 @dataclass
 class BehaviorSpec:
     agent_type_id: str
-    mode: str                          # deterministic | stochastic | mixed
+    mode: str                          # deterministic | stochastic | mixed | llm | rational
     proportion: float
     base_quantity: float = 1.0
     rules: list[Rule] = field(default_factory=list)
     stochastic_actions: list[WeightedAction] = field(default_factory=list)
+    # LLM mode — raw config dict converted to LLMDeciderConfig in agent.py
+    llm_config: dict | None = None
+    llm_population_pct: float = 1.0   # fraction of agents in this type using LLM
+    risk_tolerance_range: tuple = (0.3, 0.7)
+    planning_horizon_range: tuple = (1, 5)
+    # Rational mode — raw config dict converted to RationalConfig in agent.py
+    rational_config: dict | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -147,7 +154,8 @@ class BehaviorEngine:
             if action != "no_change":
                 return action, qty, reason
             return self._stochastic()
-        raise ValueError(f"Unknown mode: {mode}")
+        # llm and rational are dispatched before reaching BehaviorEngine in agent.py
+        raise ValueError(f"Unknown mode: {mode!r} — llm/rational must be handled before calling BehaviorEngine")
 
     def _deterministic(self, obs: dict[str, Any]) -> tuple[str, float, str]:
         for rule in self.spec.rules:
@@ -195,12 +203,22 @@ def parse_behavior_specs(agent_types: list[dict]) -> list[BehaviorSpec]:
             )
             for a in cfg.get("stochastic_actions", [])
         ]
+        mode = cfg["mode"]
+        llm_cfg = cfg.get("llm")
+        # mode: llm with no explicit llm: block → use all defaults
+        if mode == "llm" and llm_cfg is None:
+            llm_cfg = {}
         specs.append(BehaviorSpec(
             agent_type_id=cfg["id"],
-            mode=cfg["mode"],
+            mode=mode,
             proportion=cfg["proportion"],
             base_quantity=cfg.get("base_quantity", 1.0),
             rules=rules,
             stochastic_actions=stochastic,
+            llm_config=llm_cfg,
+            llm_population_pct=float(cfg.get("llm_population_pct", 1.0)),
+            risk_tolerance_range=tuple(cfg.get("risk_tolerance_range", [0.3, 0.7])),
+            planning_horizon_range=tuple(cfg.get("planning_horizon_range", [1, 5])),
+            rational_config=cfg.get("rational"),
         ))
     return specs

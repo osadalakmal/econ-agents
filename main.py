@@ -9,10 +9,13 @@ from pathlib import Path
 import yaml
 
 from sim.reporting import (
+    DISCLAIMER,
+    print_comparison,
     print_round,
     print_simulation_header,
     print_simulation_summary,
     to_json,
+    to_json_comparison,
 )
 from sim.simulation import Simulation
 
@@ -39,7 +42,11 @@ async def run(
     print("\nConsumer distribution:")
     for t in consumer_cfg["agent_types"]:
         count = round(consumer_cfg["size"] * t["proportion"] / total_prop)
-        print(f"  {t['id']:<22} {count:>4}  ({t['mode']})")
+        mode_label = t["mode"]
+        llm_pct = t.get("llm_population_pct")
+        if llm_pct is not None and t["mode"] != "llm":
+            mode_label = f"{t['mode']} + {llm_pct*100:.0f}% llm"
+        print(f"  {t['id']:<22} {count:>4}  ({mode_label})")
 
     print("\nSupplier pool:")
     for s in config.get("suppliers", []):
@@ -87,6 +94,14 @@ async def run(
     results = sim.results
     print_simulation_summary(results)
 
+    # Print disclaimer when any LLM agents were in the run
+    has_llm = any(
+        t.get("mode") == "llm" or t.get("llm_population_pct", 0) > 0
+        for t in config["consumers"]["agent_types"]
+    )
+    if has_llm:
+        print(f"\n  {DISCLAIMER}")
+
     if output_json:
         Path(output_json).write_text(to_json(results))
         print(f"\nDetailed results written to: {output_json}")
@@ -97,6 +112,25 @@ async def run(
             do_export(results, export_gif)
         except ImportError:
             print("matplotlib or pillow not installed — skipping GIF export", file=sys.stderr)
+
+
+async def run_compare(
+    config: dict,
+    preset_a: str,
+    preset_b: str,
+    output_json: str | None,
+) -> None:
+    from sim.compare import run_comparison
+
+    print(f"\nRunning paired comparison: [{preset_a}] vs [{preset_b}]")
+    print(f"Market/supplier/shock config held constant; only consumers differ.\n")
+
+    cmp = await run_comparison(config, preset_a, preset_b)
+    print_comparison(cmp)
+
+    if output_json:
+        Path(output_json).write_text(to_json_comparison(cmp))
+        print(f"\nComparison JSON written to: {output_json}")
 
 
 def main() -> None:
@@ -118,6 +152,14 @@ def main() -> None:
         metavar="SECS",
         help="Pause between rounds in live display (default: 0.15)",
     )
+    parser.add_argument(
+        "--compare",
+        metavar="A:B",
+        help=(
+            "Run paired comparison between two consumer presets defined in the config "
+            "(e.g. --compare rational:llm_driven). Requires a top-level `presets:` key."
+        ),
+    )
     args = parser.parse_args()
 
     if not Path(args.config).exists():
@@ -128,7 +170,14 @@ def main() -> None:
     if args.rounds:
         config["rounds"] = args.rounds
 
-    asyncio.run(run(config, args.output_json, args.export_gif, args.no_viz, args.delay))
+    if args.compare:
+        parts = args.compare.split(":", 1)
+        if len(parts) != 2:
+            print("--compare expects format A:B (e.g. rational:llm_driven)", file=sys.stderr)
+            sys.exit(1)
+        asyncio.run(run_compare(config, parts[0], parts[1], args.output_json))
+    else:
+        asyncio.run(run(config, args.output_json, args.export_gif, args.no_viz, args.delay))
 
 
 if __name__ == "__main__":

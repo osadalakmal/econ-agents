@@ -1,0 +1,242 @@
+# ---------------------------------------------------------------------------
+# Scenario: Rice Price Shock — LLM + Rational validation config
+#
+# Smaller population (200) for faster iteration while validating LLM mode.
+# Uses the same market/supplier/shock config as rice_price.yaml but replaces
+# the consumer population with a mix of llm, rational, and rule-based types.
+#
+# Run normally:    python main.py configs/rice_price_llm.yaml
+# Compare presets: python main.py configs/rice_price_llm.yaml --compare rational:hoarder_mix
+#
+# Requires LM Studio running at localhost:1234 with a Qwen3-4B (or similar)
+# model loaded. If the server is unreachable, LLM agents fall back to
+# no_change silently — the run still completes.
+# ---------------------------------------------------------------------------
+
+seed: 7
+rounds: 30
+
+markets:
+  rice:
+    initial_price: 1.00
+    initial_stock: 4000
+    production_cost: 0.65
+
+    price_algorithm:
+      type: stock_based
+      target_stock_days: 14
+      elasticity: 0.30
+      demand_window: 4
+      min_price: 0.30
+      max_price: 5.00
+
+suppliers:
+  - id: large_producer
+    count: 3
+    market: rice
+    production_cost: 0.70
+    initial_production_rate: 150
+    production_lag: 5
+    max_ramp_up: 0.08
+    max_ramp_down: 0.15
+    bankruptcy_threshold: 10
+    restart_rate: 20
+    restart_margin: 1.20
+    min_production_rate: 20
+    rules:
+      - condition: "consecutive_loss_rounds >= 5"
+        action: decrease_production
+        adjustment_factor: -0.15
+        label: "sustained losses — cut"
+      - condition: "stock_ratio > 2.0"
+        action: decrease_production
+        adjustment_factor: -0.10
+        label: "oversupplied — pull back"
+      - condition: "margin > 1.8 and stock_ratio < 0.8"
+        action: increase_production
+        adjustment_factor: 0.08
+        label: "crisis prices + shortage — expand"
+      - condition: "margin > 1.4 and stock_ratio < 1.2"
+        action: increase_production
+        adjustment_factor: 0.05
+        label: "good margin + shortage — grow"
+      - condition: "margin < 1.0"
+        action: decrease_production
+        adjustment_factor: -0.12
+        label: "below cost — cut"
+
+  - id: small_producer
+    count: 6
+    market: rice
+    production_cost: 0.82
+    initial_production_rate: 55
+    production_lag: 3
+    max_ramp_up: 0.12
+    max_ramp_down: 0.35
+    bankruptcy_threshold: 3
+    restart_rate: 6
+    restart_margin: 1.50
+    min_production_rate: 4
+    rules:
+      - condition: "consecutive_loss_rounds >= 2"
+        action: decrease_production
+        adjustment_factor: -0.35
+        label: "can't absorb losses — cut hard"
+      - condition: "stock_ratio > 2.0"
+        action: decrease_production
+        adjustment_factor: -0.18
+        label: "glut — pull back"
+      - condition: "margin > 2.0 and stock_ratio < 1.0"
+        action: increase_production
+        adjustment_factor: 0.12
+        label: "crisis opportunity — ramp"
+      - condition: "margin > 1.5 and stock_ratio < 1.5"
+        action: increase_production
+        adjustment_factor: 0.08
+        label: "good margin — expand"
+      - condition: "margin < 1.05"
+        action: decrease_production
+        adjustment_factor: -0.30
+        label: "near breakeven — cut"
+
+# ---------------------------------------------------------------------------
+# Consumers: 200 agents — small population for LLM-mode validation
+# ---------------------------------------------------------------------------
+consumers:
+  size: 200
+
+  agent_types:
+
+    # LLM-driven buyers (30%) — traits vary per agent, no persona labels in prompt
+    - id: llm_driven
+      proportion: 0.30
+      mode: llm
+      base_quantity: 1.0
+      risk_tolerance_range: [0.1, 0.9]
+      planning_horizon_range: [1, 8]
+      llm:
+        base_url: "http://localhost:1234/v1"
+        model: "qwen3-4b"
+        timeout_s: 8.0
+        max_retries: 2
+
+    # Rational baseline (20%) — utility-maximising, tunable elasticity
+    - id: rational_buyer
+      proportion: 0.20
+      mode: rational
+      base_quantity: 1.0
+      rational:
+        elasticity: 0.40
+        scarcity_threshold: 0.80
+
+    # Rule-based hoarder (25%)
+    - id: hoarder
+      proportion: 0.25
+      mode: deterministic
+      base_quantity: 1.0
+      rules:
+        - condition: "price_change_pct > 10 or stock_ratio < 0.6"
+          action: buy_more
+          quantity_factor: 3.5
+          label: "panic — stockpile"
+        - condition: "price_change_pct > 3"
+          action: buy_more
+          quantity_factor: 1.8
+          label: "rising prices — accumulate"
+        - condition: "stock_ratio > 1.5 and price_change_pct < -3"
+          action: buy_less
+          quantity_factor: 0.7
+          label: "normalising — draw down"
+
+    # Random actor (25%)
+    - id: random_actor
+      proportion: 0.25
+      mode: stochastic
+      base_quantity: 0.9
+      stochastic_actions:
+        - action: no_change
+          weight: 0.45
+          quantity_factor: 1.0
+        - action: buy_more
+          weight: 0.30
+          quantity_factor: 1.3
+        - action: buy_less
+          weight: 0.20
+          quantity_factor: 0.75
+        - action: hold
+          weight: 0.05
+          quantity_factor: 0.0
+
+shocks:
+  - round: 0
+    type: stock_shock
+    market: rice
+    delta_pct: -40.0
+    description: "Export ban: major supplier exits — 40% inventory destruction"
+
+  - round: 2
+    type: price_shock
+    market: rice
+    delta_pct: 20.0
+    description: "News spreads: global markets reprice on shortage"
+
+  - round: 18
+    type: stock_shock
+    market: rice
+    delta_pct: 15.0
+    description: "Emergency imports secured — partial supply restoration"
+
+# ---------------------------------------------------------------------------
+# Presets for --compare runs
+# e.g.: python main.py configs/rice_price_llm.yaml --compare rational:hoarder_mix
+# ---------------------------------------------------------------------------
+presets:
+
+  rational:
+    size: 200
+    agent_types:
+      - id: rational_consumer
+        proportion: 1.0
+        mode: rational
+        base_quantity: 1.0
+        rational:
+          elasticity: 0.40
+          scarcity_threshold: 0.80
+
+  hoarder_mix:
+    size: 200
+    agent_types:
+      - id: hoarder
+        proportion: 0.50
+        mode: deterministic
+        base_quantity: 1.0
+        rules:
+          - condition: "price_change_pct > 10 or stock_ratio < 0.6"
+            action: buy_more
+            quantity_factor: 3.5
+            label: "panic — stockpile"
+          - condition: "price_change_pct > 3"
+            action: buy_more
+            quantity_factor: 1.8
+            label: "rising prices — accumulate"
+          - condition: "stock_ratio > 1.5 and price_change_pct < -3"
+            action: buy_less
+            quantity_factor: 0.7
+            label: "normalising — draw down"
+      - id: random_actor
+        proportion: 0.50
+        mode: stochastic
+        base_quantity: 0.9
+        stochastic_actions:
+          - action: no_change
+            weight: 0.45
+            quantity_factor: 1.0
+          - action: buy_more
+            weight: 0.30
+            quantity_factor: 1.3
+          - action: buy_less
+            weight: 0.20
+            quantity_factor: 0.75
+          - action: hold
+            weight: 0.05
+            quantity_factor: 0.0

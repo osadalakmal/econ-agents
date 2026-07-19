@@ -2,9 +2,18 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from .simulation import RoundResult
+
+if TYPE_CHECKING:
+    from .compare import ComparisonResult
+
+DISCLAIMER = (
+    "NOTE: Results show model predictions under the stated behavioral assumptions "
+    "and calibration, not recovered historical facts. "
+    "Do not interpret outputs as empirical validation of real-world events."
+)
 
 
 def print_round(result: RoundResult) -> None:
@@ -21,7 +30,6 @@ def print_round(result: RoundResult) -> None:
     )
     print(f"{'─'*65}")
 
-    # Demand / supply line
     shortage_tag = f"  *** SHORTAGE {s['shortage']:.0f} units ***" if s["shortage"] > 0 else ""
     print(
         f"  demand={s['demand']:.0f}  consumed={s['actual_consumption']:.0f}"
@@ -29,14 +37,12 @@ def print_round(result: RoundResult) -> None:
         f"  fill={s['fill_rate']:.0f}%{shortage_tag}"
     )
 
-    # Consumer action breakdown (compact)
     parts = "  ".join(
         f"{a}: {info['count']} ({info['pct']:.0f}%)"
         for a, info in s["consumer_actions"].items()
     )
     print(f"  consumers → {parts}")
 
-    # Supplier summary
     if s["supplier_decisions"]:
         print("  suppliers →", end="")
         for sd in s["supplier_decisions"]:
@@ -69,7 +75,6 @@ def print_simulation_summary(results: list[RoundResult]) -> None:
     print(f"  {'Rnd':>3}  {'Price':>7}  {'Stock':>7}  {'Demand':>7}  {'Shortage':>8}  {'Pipeline':>8}")
     print(f"  {'─'*3}  {'─'*7}  {'─'*7}  {'─'*7}  {'─'*8}  {'─'*8}")
 
-    # We need market history — pull from last result's market if available
     for r in results:
         s = r.summary()
         print(
@@ -92,9 +97,66 @@ def print_simulation_summary(results: list[RoundResult]) -> None:
     print(f"{'═'*65}")
 
 
+def print_comparison(cmp: ComparisonResult) -> None:
+    W = 78
+    print(f"\n{'═'*W}")
+    print(f"  COMPARISON: [{cmp.preset_a.upper()}] vs [{cmp.preset_b.upper()}]")
+    print(f"{'═'*W}")
+    header = (
+        f"  {'Rnd':>3}  "
+        f"{'Price-A':>8}  {'Price-B':>8}  {'ΔPrice':>8}  "
+        f"{'Stock-A':>8}  {'Stock-B':>8}  {'ΔStock':>8}"
+    )
+    print(header)
+    print(f"  {'─'*3}  {'─'*8}  {'─'*8}  {'─'*8}  {'─'*8}  {'─'*8}  {'─'*8}")
+
+    for ra, rb in zip(cmp.results_a, cmp.results_b):
+        sa, sb = ra.summary(), rb.summary()
+        dp = sa["price_after"] - sb["price_after"]
+        ds = sa["stock_after"] - sb["stock_after"]
+        print(
+            f"  {sa['round']:>3}"
+            f"  {sa['price_after']:>8.4f}"
+            f"  {sb['price_after']:>8.4f}"
+            f"  {dp:>+8.4f}"
+            f"  {sa['stock_after']:>8.0f}"
+            f"  {sb['stock_after']:>8.0f}"
+            f"  {ds:>+8.0f}"
+        )
+
+    if cmp.results_a and cmp.results_b:
+        avg_a = sum(r.clearing.price_after for r in cmp.results_a) / len(cmp.results_a)
+        avg_b = sum(r.clearing.price_after for r in cmp.results_b) / len(cmp.results_b)
+        short_a = sum(r.clearing.shortage for r in cmp.results_a)
+        short_b = sum(r.clearing.shortage for r in cmp.results_b)
+        print(f"\n  Avg price    — {cmp.preset_a}: {avg_a:.4f}  |  {cmp.preset_b}: {avg_b:.4f}")
+        print(f"  Total shortage — {cmp.preset_a}: {short_a:.0f}  |  {cmp.preset_b}: {short_b:.0f}")
+
+    print(f"\n  {DISCLAIMER}")
+    print(f"{'═'*W}")
+
+
 def to_json(results: list[RoundResult]) -> str:
-    out = []
-    for r in results:
-        s = r.summary()
-        out.append(s)
+    return json.dumps([r.summary() for r in results], indent=2)
+
+
+def to_json_comparison(cmp: ComparisonResult) -> str:
+    out: dict[str, Any] = {
+        "comparison": {
+            "preset_a": cmp.preset_a,
+            "preset_b": cmp.preset_b,
+        },
+        "disclaimer": DISCLAIMER,
+        cmp.preset_a: [r.summary() for r in cmp.results_a],
+        cmp.preset_b: [r.summary() for r in cmp.results_b],
+        "diff": [
+            {
+                "round": ra.round_number,
+                "price_delta": round(ra.clearing.price_after - rb.clearing.price_after, 6),
+                "stock_delta": round(ra.clearing.stock_after - rb.clearing.stock_after, 2),
+                "shortage_delta": round(ra.clearing.shortage - rb.clearing.shortage, 2),
+            }
+            for ra, rb in zip(cmp.results_a, cmp.results_b)
+        ],
+    }
     return json.dumps(out, indent=2)

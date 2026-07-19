@@ -1,0 +1,353 @@
+# ---------------------------------------------------------------------------
+# Scenario: 2022 Black Sea Wheat Crisis — Calibrated
+#
+# Calibrated against publicly available data from:
+#   - UN FAO Food Price Index (FFPI), Jan–Dec 2022
+#   - USDA WASDE reports (World Agricultural Supply and Demand Estimates)
+#   - CME Chicago SRW Wheat Futures (March 2022 contract)
+#   - IEA natural gas price index (energy/fertiliser cost input)
+#
+# Real-world anchor points:
+#   - Jan 2022: Chicago wheat ~$8.00/bu  → normalised to price = 1.00
+#   - Feb 24 2022: Russia invades Ukraine; Black Sea corridor closes
+#   - Mar 2022: Chicago wheat peaks ~$13.50/bu  → +68% in ~4 weeks
+#   - Russia + Ukraine accounted for ~30% of global wheat export volume
+#   - Global wheat stocks-to-use ratio: ~34% (Jan 2022)
+#   - Urea (nitrogen fertiliser) had already risen ~100% from 2020 baseline
+#   - Jul 22 2022: Black Sea Grain Initiative signed → partial export resumption
+#   - Dec 2022: Chicago wheat ~$7.50/bu — near pre-war levels
+#
+# Model disclaimer: This scenario reproduces aggregate price dynamics under the
+# model's stated behavioral assumptions. It is not a validated econometric model
+# and should not be cited as empirical evidence of real-world mechanisms.
+# ---------------------------------------------------------------------------
+
+seed: 2022
+rounds: 48    # ~12 months (1 round ≈ 1 week average)
+
+markets:
+  wheat:
+    initial_price: 1.00         # normalised; ≈ $8.00/bu Jan 2022
+    initial_stock: 5400         # ~34 weeks × ~160 units/week demand ≈ global stocks-to-use
+    production_cost: 0.72       # blended domestic cost; global imports were cheaper pre-war
+
+    price_algorithm:
+      type: stock_based
+      target_stock_days: 21     # food-security buffer: 3 weeks of demand
+      elasticity: 0.28          # wheat is a staple — moderate but real price response
+      demand_window: 4
+      min_price: 0.35           # floor: government intervention / subsidies
+      max_price: 5.50           # ceiling: ≈ $44/bu equivalent; demand destruction above this
+
+suppliers:
+  # Major exporters (EU, Australia, Canada, Argentina) stepping up to fill gap
+  - id: alternative_exporter
+    count: 4
+    market: wheat
+    production_cost: 0.74       # higher logistics cost to redirect from usual routes
+    initial_production_rate: 130 # 4×130=520/round baseline
+    production_lag: 6           # rerouting shipping lanes + customs takes ~6 weeks
+    max_ramp_up: 0.07           # physical throughput (port capacity) is the constraint
+    max_ramp_down: 0.18
+    bankruptcy_threshold: 12
+    restart_rate: 25
+    restart_margin: 1.15
+    min_production_rate: 30
+    rules:
+      - condition: "consecutive_loss_rounds >= 6"
+        action: decrease_production
+        adjustment_factor: -0.15
+        label: "sustained losses — cut"
+      - condition: "own_pipeline_rounds > 8"
+        action: maintain
+        adjustment_factor: 0.0
+        label: "pipeline loaded — hold"
+      - condition: "stock_ratio > 2.2"
+        action: decrease_production
+        adjustment_factor: -0.10
+        label: "glut building — ease back"
+      - condition: "margin > 1.8 and stock_ratio < 0.7"
+        action: increase_production
+        adjustment_factor: 0.07
+        label: "crisis premium + acute shortage — expand"
+      - condition: "margin > 1.4 and stock_ratio < 1.2"
+        action: increase_production
+        adjustment_factor: 0.05
+        label: "strong margin + shortage — grow"
+      - condition: "margin > 1.1 and stock_ratio < 1.5"
+        action: increase_production
+        adjustment_factor: 0.02
+        label: "thin margin — cautious expansion"
+      - condition: "margin < 1.0"
+        action: decrease_production
+        adjustment_factor: -0.12
+        label: "below cost — cut"
+
+  # Domestic producers (importing countries ramping up)
+  - id: domestic_producer
+    count: 7
+    market: wheat
+    production_cost: 0.82       # smallholders + fertiliser spike exposure
+    initial_production_rate: 48 # 7×48=336/round
+    production_lag: 4           # shorter — existing planted area, just expand harvest
+    max_ramp_up: 0.10
+    max_ramp_down: 0.30
+    bankruptcy_threshold: 4     # thin margins; exit quickly under losses
+    restart_rate: 8
+    restart_margin: 1.45
+    min_production_rate: 5
+    rules:
+      - condition: "consecutive_loss_rounds >= 3"
+        action: decrease_production
+        adjustment_factor: -0.30
+        label: "cash burn — cut hard"
+      - condition: "stock_ratio > 2.0"
+        action: decrease_production
+        adjustment_factor: -0.18
+        label: "glut — pull back"
+      - condition: "margin > 2.0 and stock_ratio < 0.8"
+        action: increase_production
+        adjustment_factor: 0.10
+        label: "crisis opportunity — ramp"
+      - condition: "margin > 1.5 and stock_ratio < 1.3"
+        action: increase_production
+        adjustment_factor: 0.07
+        label: "profitable + undersupplied — grow"
+      - condition: "margin < 1.05"
+        action: decrease_production
+        adjustment_factor: -0.28
+        label: "near breakeven — cut"
+
+# ---------------------------------------------------------------------------
+# Consumers: 1000 agents
+# Baseline demand ≈ 856/round; supply ≈ 856/round → near-equilibrium pre-shock
+# ---------------------------------------------------------------------------
+consumers:
+  size: 1000
+
+  agent_types:
+
+    # --- FOOD PROCESSORS / FLOUR MILLS (20%) — must buy regardless -----------
+    - id: food_processor
+      proportion: 0.20
+      mode: deterministic
+      base_quantity: 1.8
+      rules:
+        - condition: "stock_ratio < 0.5"
+          action: buy_more
+          quantity_factor: 2.5
+          label: "acute shortage — secure at any price"
+        - condition: "stock_ratio < 1.0"
+          action: buy_more
+          quantity_factor: 1.6
+          label: "below buffer — top up"
+        - condition: "price_change_pct > 25"
+          action: buy_less
+          quantity_factor: 0.88
+          label: "extreme price — shave margins"
+        - condition: "stock_ratio > 2.0"
+          action: buy_less
+          quantity_factor: 0.80
+          label: "comfortable stock — ease purchasing"
+
+    # --- PANIC HOARDERS / FOOD SECURITY STOCKPILERS (20%) -------------------
+    - id: panic_stockpiler
+      proportion: 0.20
+      mode: deterministic
+      base_quantity: 1.0
+      rules:
+        - condition: "price_change_pct > 15 or stock_ratio < 0.5"
+          action: buy_more
+          quantity_factor: 4.0
+          label: "crisis — fill the silo"
+        - condition: "price_change_pct > 7 or stock_ratio < 0.8"
+          action: buy_more
+          quantity_factor: 2.5
+          label: "elevated risk — stockpile"
+        - condition: "price_change_pct > 2"
+          action: buy_more
+          quantity_factor: 1.5
+          label: "any rise — modest extra"
+        - condition: "stock_ratio > 1.6 and price_change_pct < -5"
+          action: buy_less
+          quantity_factor: 0.65
+          label: "normalising — draw down stockpile"
+
+    # --- BUDGET-CONSTRAINED HOUSEHOLDS (30%) — most price-elastic -----------
+    - id: poor_household
+      proportion: 0.30
+      mode: deterministic
+      base_quantity: 0.8
+      rules:
+        - condition: "price_change_pct > 30"
+          action: buy_less
+          quantity_factor: 0.20
+          label: "unaffordable — severe cutback"
+        - condition: "price_change_pct > 18"
+          action: buy_less
+          quantity_factor: 0.40
+          label: "major cutback"
+        - condition: "price_change_pct > 8"
+          action: buy_less
+          quantity_factor: 0.68
+          label: "moderate cutback"
+        - condition: "price_change_pct < -12"
+          action: buy_more
+          quantity_factor: 1.1
+          label: "prices falling — restock"
+
+    # --- SPECULATORS / COMMODITY TRADERS (15%) ------------------------------
+    - id: commodity_trader
+      proportion: 0.15
+      mode: deterministic
+      base_quantity: 1.0
+      rules:
+        - condition: "price_change_pct > 8 and stock_ratio < 1.2"
+          action: buy_more
+          quantity_factor: 3.5
+          label: "momentum + scarcity — accumulate"
+        - condition: "price_change_pct > 3"
+          action: buy_more
+          quantity_factor: 2.0
+          label: "uptrend — ride it"
+        - condition: "price_change_pct < -6"
+          action: buy_less
+          quantity_factor: 0.45
+          label: "trend broken — liquidate"
+        - condition: "stock_ratio > 2.0"
+          action: buy_less
+          quantity_factor: 0.55
+          label: "glut signal — exit"
+
+    # --- ADAPTIVE MIDDLE-CLASS HOUSEHOLDS (15%) ----------------------------
+    - id: adaptive_household
+      proportion: 0.15
+      mode: mixed
+      base_quantity: 1.0
+      rules:
+        - condition: "price_change_pct > 35 or stock_ratio < 0.4"
+          action: buy_more
+          quantity_factor: 1.8
+          label: "crisis — secure supply"
+        - condition: "price_change_pct < -18"
+          action: buy_more
+          quantity_factor: 1.3
+          label: "price recovery — restock"
+      stochastic_actions:
+        - action: buy_more
+          weight: 0.18
+          quantity_factor: 1.2
+        - action: buy_less
+          weight: 0.32
+          quantity_factor: 0.80
+        - action: hold
+          weight: 0.22
+          quantity_factor: 0.0
+        - action: no_change
+          weight: 0.28
+          quantity_factor: 1.0
+
+shocks:
+  # Week 0 (~Feb 24 2022): invasion + corridor closure
+  # Russia (~20%) + Ukraine (~10%) = ~30% of global wheat export volume disrupted.
+  # We model the immediate inventory draw as ~28% — slightly below 30% because
+  # some pipeline shipments already at sea still arrive.
+  - round: 0
+    type: stock_shock
+    market: wheat
+    delta_pct: -28.0
+    description: "Black Sea corridor closes: Russia-Ukraine export routes cut (−28% global supply)"
+
+  # Week 2: futures markets fully reprice; Chicago wheat +35% in 2 weeks
+  - round: 2
+    type: price_shock
+    market: wheat
+    delta_pct: 35.0
+    description: "Futures reprice on supply shock; Chicago wheat +35% (Feb→Mar 2022 data)"
+
+  # Week 4: natural gas–linked fertiliser costs spike; European producers exposed
+  # Urea prices had doubled from 2020 baseline; modelled here as a 22% cost push
+  - round: 4
+    type: cost_shock
+    market: wheat
+    delta_pct: 22.0
+    description: "Fertiliser/energy cost spike: urea +100% YoY propagates to production cost"
+
+  # Week 22 (~Jul 2022): Black Sea Grain Initiative signed; partial resumption
+  # Ukrainian exports restarted at ~40% of pre-war volume; modelled as +10% stock
+  - round: 22
+    type: stock_shock
+    market: wheat
+    delta_pct: 10.0
+    description: "Black Sea Grain Initiative (Jul 22 2022): partial Ukrainian export resumption"
+
+  # Week 32 (~Oct 2022): price falls back as supply normalises + demand destruction
+  # Chicago wheat back near $8.50/bu; modelled as a −20% price correction
+  - round: 32
+    type: price_shock
+    market: wheat
+    delta_pct: -20.0
+    description: "Price normalisation: demand destruction + alternative supply correction"
+
+# ---------------------------------------------------------------------------
+# Presets for --compare runs
+# e.g.: python main.py configs/wheat_shock_2022.yaml --compare rational:panic_driven
+# ---------------------------------------------------------------------------
+presets:
+
+  rational:
+    size: 500
+    agent_types:
+      - id: rational_consumer
+        proportion: 1.0
+        mode: rational
+        base_quantity: 1.0
+        rational:
+          elasticity: 0.35
+          scarcity_threshold: 0.75
+
+  panic_driven:
+    size: 500
+    agent_types:
+      - id: panic_stockpiler
+        proportion: 0.50
+        mode: deterministic
+        base_quantity: 1.0
+        rules:
+          - condition: "price_change_pct > 15 or stock_ratio < 0.5"
+            action: buy_more
+            quantity_factor: 4.0
+            label: "crisis — fill the silo"
+          - condition: "price_change_pct > 7 or stock_ratio < 0.8"
+            action: buy_more
+            quantity_factor: 2.5
+            label: "elevated risk — stockpile"
+          - condition: "price_change_pct > 2"
+            action: buy_more
+            quantity_factor: 1.5
+            label: "any rise — modest extra"
+          - condition: "stock_ratio > 1.6 and price_change_pct < -5"
+            action: buy_less
+            quantity_factor: 0.65
+            label: "normalising — draw down"
+      - id: commodity_trader
+        proportion: 0.50
+        mode: deterministic
+        base_quantity: 1.0
+        rules:
+          - condition: "price_change_pct > 8 and stock_ratio < 1.2"
+            action: buy_more
+            quantity_factor: 3.5
+            label: "momentum + scarcity — accumulate"
+          - condition: "price_change_pct > 3"
+            action: buy_more
+            quantity_factor: 2.0
+            label: "uptrend — ride it"
+          - condition: "price_change_pct < -6"
+            action: buy_less
+            quantity_factor: 0.45
+            label: "trend broken — liquidate"
+          - condition: "stock_ratio > 2.0"
+            action: buy_less
+            quantity_factor: 0.55
+            label: "glut signal — exit"
