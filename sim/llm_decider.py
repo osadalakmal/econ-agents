@@ -51,12 +51,10 @@ def _build_prompt(state: dict[str, Any]) -> tuple[str, str]:
     """
     system = (
         "You are a market participant deciding how much of a commodity to buy this round. "
-        "Respond with JSON only — no extra text. "
-        "Choose action: buy_more (quantity_factor > 1.0), buy_less (factor < 1.0), "
-        "hold (skip buying entirely this round, factor ignored), "
-        "or no_change (factor = 1.0, normal volume). "
-        "quantity_factor scales your baseline purchase volume. "
-        "A factor of 1.5 means 50%% more than normal; 0.6 means 40%% less."
+        'Respond with ONLY a JSON object in this exact format: {"action": "...", "quantity_factor": 1.0, "reasoning": "..."} '
+        "action must be one of: buy_more, buy_less, hold, no_change. "
+        "quantity_factor: >1.0 for buy_more (e.g. 1.5 = 50%% more), <1.0 for buy_less (e.g. 0.7 = 30%% less), 1.0 for no_change. "
+        "No text outside the JSON object."
     )
     user = (
         "=== Market signals ===\n"
@@ -115,23 +113,19 @@ async def decide_llm(
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_prompt},
                     ],
-                    response_format={
-                        "type": "json_schema",
-                        "json_schema": {
-                            "name": "market_decision",
-                            "schema": _RESPONSE_SCHEMA,
-                            "strict": True,
-                        },
-                    },
+                    response_format={"type": "json_object"},
                     temperature=0.7,
                     max_tokens=80,
                 ),
                 timeout=config.timeout_s,
             )
             raw = resp.choices[0].message.content or ""
-            # Thinking models (e.g. Qwen3-thinking) prepend <think>...</think>
-            # blocks before the JSON payload — strip them before parsing.
+            # Thinking models prepend <think>...</think> — strip before parsing.
             raw = re.sub(r"<think>.*?</think>", "", raw, flags=re.DOTALL).strip()
+            # Strip markdown code fences if present
+            raw = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw, flags=re.DOTALL).strip()
+            if not raw:
+                raise ValueError("empty response after stripping think blocks")
             data = json.loads(raw)
             action = data.get("action", config.fallback_action)
             if action not in _VALID_ACTIONS:
