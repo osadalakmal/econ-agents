@@ -1,0 +1,160 @@
+# ---------------------------------------------------------------------------
+# Scenario: Rice price shock
+# Simulates a population of 1000 responding to a 25% rice price increase.
+# ---------------------------------------------------------------------------
+
+seed: 42
+
+world:
+  commodities:
+    rice:
+      price: 1.00    # baseline price (normalised to 1.0)
+      supply: 10000  # total supply units
+      demand: 0.0    # reset each round
+
+population:
+  size: 1000
+
+# ---------------------------------------------------------------------------
+# Agent types — proportions must sum to 1.0
+#
+# Modes:
+#   deterministic  — evaluates rules top-down; first match wins
+#   stochastic     — picks from weighted action table randomly
+#   mixed          — tries rules first; if no rule matches, goes stochastic
+#
+# Available condition variables:
+#   price_change_pct   — % price change this round (from stimulus)
+#   supply_change_pct  — % supply change
+#   current_price      — absolute price after stimulus
+#   current_supply     — absolute supply after stimulus
+#   agent_savings      — agent's current savings
+#   agent_inventory    — agent's current inventory
+#   round              — current round number
+# ---------------------------------------------------------------------------
+
+agent_types:
+
+  # --- HOARDERS (20%) -------------------------------------------------------
+  # Expect prices to keep rising; stock up aggressively when price spikes.
+  - id: hoarder
+    proportion: 0.20
+    mode: deterministic
+    base_quantity: 2.0
+    rules:
+      - condition: "price_change_pct > 20"
+        action: buy_more
+        quantity_factor: 2.5
+        label: "aggressive hoarding: large price spike"
+      - condition: "price_change_pct > 10"
+        action: buy_more
+        quantity_factor: 1.5
+        label: "moderate hoarding: medium price spike"
+      - condition: "price_change_pct > 0"
+        action: buy_more
+        quantity_factor: 1.0
+        label: "light hoarding: any price increase"
+
+  # --- GOVERNMENT TRUSTERS (25%) --------------------------------------------
+  # Believe the government will intervene; reduce purchases to wait it out.
+  - id: government_truster
+    proportion: 0.25
+    mode: deterministic
+    base_quantity: 1.0
+    rules:
+      - condition: "price_change_pct > 15"
+        action: buy_less
+        quantity_factor: 0.3
+        label: "sharp cutback: trusting intervention"
+      - condition: "price_change_pct > 5"
+        action: buy_less
+        quantity_factor: 0.6
+        label: "moderate cutback: expecting normalisation"
+      - condition: "price_change_pct > 0"
+        action: hold
+        quantity_factor: 0.0
+        label: "hold: wait and see"
+
+  # --- BUDGET CONSTRAINED (20%) ---------------------------------------------
+  # Simply cannot afford higher prices; forced to buy less regardless.
+  - id: budget_constrained
+    proportion: 0.20
+    mode: deterministic
+    base_quantity: 1.0
+    rules:
+      - condition: "price_change_pct > 0 and agent_savings < 120"
+        action: buy_less
+        quantity_factor: 0.4
+        label: "forced reduction: savings < 120"
+      - condition: "price_change_pct > 15"
+        action: buy_less
+        quantity_factor: 0.7
+        label: "forced reduction: price too high"
+      - condition: "price_change_pct > 0"
+        action: buy_less
+        quantity_factor: 0.85
+        label: "mild reduction: slight tightening"
+
+  # --- ADAPTIVE / MIXED (15%) -----------------------------------------------
+  # Have a rule for extreme shocks; otherwise act randomly.
+  - id: adaptive
+    proportion: 0.15
+    mode: mixed
+    base_quantity: 1.0
+    rules:
+      - condition: "price_change_pct > 30"
+        action: buy_less
+        quantity_factor: 0.5
+        label: "panic reduction: extreme shock"
+    stochastic_actions:
+      - action: buy_more
+        weight: 0.25
+        quantity_factor: 1.2
+      - action: buy_less
+        weight: 0.35
+        quantity_factor: 0.8
+      - action: hold
+        weight: 0.25
+        quantity_factor: 0.0
+      - action: no_change
+        weight: 0.15
+        quantity_factor: 1.0
+
+  # --- PURE RANDOM (20%) ----------------------------------------------------
+  # No fixed logic; weights represent baseline population uncertainty.
+  - id: random_actor
+    proportion: 0.20
+    mode: stochastic
+    base_quantity: 1.0
+    stochastic_actions:
+      - action: buy_more
+        weight: 0.30
+        quantity_factor: 1.3
+      - action: buy_less
+        weight: 0.40
+        quantity_factor: 0.7
+      - action: hold
+        weight: 0.20
+        quantity_factor: 0.0
+      - action: no_change
+        weight: 0.10
+        quantity_factor: 1.0
+
+# ---------------------------------------------------------------------------
+# Stimuli — list of rounds to run (one stimulus = one round)
+# ---------------------------------------------------------------------------
+stimuli:
+  - name: "rice_price_spike_25pct"
+    commodity: rice
+    delta_pct: 25.0
+    supply_delta_pct: 0.0
+
+  - name: "supply_squeeze_10pct"
+    commodity: rice
+    delta_pct: 5.0
+    supply_delta_pct: -10.0
+
+  - name: "partial_recovery"
+    commodity: rice
+    delta_pct: -8.0
+    supply_delta_pct: 5.0
