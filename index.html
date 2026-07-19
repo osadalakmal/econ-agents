@@ -1,0 +1,892 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Econ-Agents: Model Guide</title>
+<style>
+  /* ── Tokens ─────────────────────────────────────────────────────────── */
+  :root {
+    --bg:         #f7f5f0;
+    --bg2:        #edeae3;
+    --bg3:        #e2ded4;
+    --border:     #ccc8bc;
+    --text:       #1b1c24;
+    --text2:      #5a5a6e;
+    --accent:     #b07a1c;
+    --accent-dim: #d4a857;
+    --code-bg:    #1b1c24;
+    --code-text:  #d8dae8;
+    --code-comment: #636580;
+    --tag:        #3a6e52;
+    --tag-bg:     #dff0e8;
+    --warn:       #a04040;
+    --warn-bg:    #f5e6e6;
+    --nav-w:      220px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg:         #0d0e14;
+      --bg2:        #13141e;
+      --bg3:        #1a1c2a;
+      --border:     #2a2d44;
+      --text:       #d8dae8;
+      --text2:      #7880a8;
+      --accent:     #c9933a;
+      --accent-dim: #8a6020;
+      --code-bg:    #090a10;
+      --code-text:  #d8dae8;
+      --code-comment: #4a4e68;
+      --tag:        #4caf82;
+      --tag-bg:     #0e2a1e;
+      --warn:       #e06c75;
+      --warn-bg:    #2a0e10;
+    }
+  }
+  :root[data-theme="light"] {
+    --bg:         #f7f5f0;
+    --bg2:        #edeae3;
+    --bg3:        #e2ded4;
+    --border:     #ccc8bc;
+    --text:       #1b1c24;
+    --text2:      #5a5a6e;
+    --accent:     #b07a1c;
+    --accent-dim: #d4a857;
+    --code-bg:    #1b1c24;
+    --code-text:  #d8dae8;
+    --code-comment: #636580;
+    --tag:        #3a6e52;
+    --tag-bg:     #dff0e8;
+    --warn:       #a04040;
+    --warn-bg:    #f5e6e6;
+  }
+  :root[data-theme="dark"] {
+    --bg:         #0d0e14;
+    --bg2:        #13141e;
+    --bg3:        #1a1c2a;
+    --border:     #2a2d44;
+    --text:       #d8dae8;
+    --text2:      #7880a8;
+    --accent:     #c9933a;
+    --accent-dim: #8a6020;
+    --code-bg:    #090a10;
+    --code-text:  #d8dae8;
+    --code-comment: #4a4e68;
+    --tag:        #4caf82;
+    --tag-bg:     #0e2a1e;
+    --warn:       #e06c75;
+    --warn-bg:    #2a0e10;
+  }
+
+  /* ── Reset & base ───────────────────────────────────────────────────── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { font-size: 16px; scroll-behavior: smooth; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: Georgia, 'Times New Roman', serif;
+    line-height: 1.7;
+    -webkit-font-smoothing: antialiased;
+  }
+  ::selection { background: var(--accent-dim); color: var(--bg); }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  /* ── Layout shell ────────────────────────────────────────────────────── */
+  .shell {
+    display: grid;
+    grid-template-columns: var(--nav-w) 1fr;
+    min-height: 100vh;
+    max-width: 1140px;
+    margin: 0 auto;
+  }
+  @media (max-width: 720px) {
+    .shell { grid-template-columns: 1fr; }
+  }
+
+  /* ── Sidebar ─────────────────────────────────────────────────────────── */
+  .sidebar {
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    overflow-y: auto;
+    border-right: 1px solid var(--border);
+    padding: 2.5rem 0 2rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
+  @media (max-width: 720px) {
+    .sidebar {
+      position: static;
+      height: auto;
+      border-right: none;
+      border-bottom: 1px solid var(--border);
+      padding: 1.5rem 1.25rem;
+      flex-direction: row;
+      flex-wrap: wrap;
+      gap: 0.25rem 0.5rem;
+    }
+  }
+  .sidebar-logo {
+    padding: 0 1.5rem 1.5rem;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 1rem;
+    font-family: ui-monospace, 'Cascadia Code', 'Fira Code', monospace;
+    font-size: 0.72rem;
+    color: var(--accent);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  @media (max-width: 720px) {
+    .sidebar-logo { display: none; }
+  }
+  .nav-section {
+    padding: 0.3rem 1.5rem 0.15rem;
+    font-family: ui-monospace, 'Cascadia Code', 'Fira Code', monospace;
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--text2);
+    margin-top: 0.9rem;
+  }
+  @media (max-width: 720px) { .nav-section { display: none; } }
+  .sidebar a {
+    display: block;
+    padding: 0.35rem 1.5rem;
+    font-family: ui-monospace, 'Cascadia Code', 'Fira Code', monospace;
+    font-size: 0.78rem;
+    color: var(--text2);
+    transition: color 0.12s;
+    border-left: 2px solid transparent;
+    margin-left: -1px;
+  }
+  .sidebar a:hover { color: var(--accent); text-decoration: none; border-left-color: var(--accent); }
+  .sidebar a.active { color: var(--accent); border-left-color: var(--accent); }
+  @media (max-width: 720px) {
+    .sidebar a {
+      border: 1px solid var(--border);
+      border-radius: 3px;
+      padding: 0.25rem 0.6rem;
+      font-size: 0.73rem;
+    }
+    .sidebar a:hover { border-color: var(--accent); }
+  }
+
+  /* ── Main content ────────────────────────────────────────────────────── */
+  .main {
+    padding: 3rem 3rem 6rem;
+    max-width: 800px;
+  }
+  @media (max-width: 720px) { .main { padding: 2rem 1.25rem 4rem; } }
+
+  /* ── Header ──────────────────────────────────────────────────────────── */
+  .doc-header {
+    margin-bottom: 3.5rem;
+    padding-bottom: 2rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .doc-eyebrow {
+    font-family: ui-monospace, 'Cascadia Code', 'Fira Code', monospace;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--accent);
+    margin-bottom: 0.75rem;
+  }
+  .doc-title {
+    font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+    font-size: clamp(1.8rem, 4vw, 2.6rem);
+    font-weight: 800;
+    line-height: 1.15;
+    text-wrap: balance;
+    color: var(--text);
+    letter-spacing: -0.02em;
+  }
+  .doc-subtitle {
+    margin-top: 0.75rem;
+    font-size: 1.05rem;
+    color: var(--text2);
+    max-width: 54ch;
+    line-height: 1.55;
+  }
+
+  /* ── Sections ────────────────────────────────────────────────────────── */
+  .section {
+    margin-bottom: 3.5rem;
+    scroll-margin-top: 2rem;
+  }
+  .section-title {
+    font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+    font-size: 1.35rem;
+    font-weight: 700;
+    letter-spacing: -0.015em;
+    text-wrap: balance;
+    color: var(--text);
+    padding-left: 0.85rem;
+    border-left: 3px solid var(--accent);
+    margin-bottom: 1.1rem;
+    line-height: 1.3;
+  }
+  .section-title small {
+    display: block;
+    font-size: 0.72rem;
+    font-family: ui-monospace, 'Cascadia Code', 'Fira Code', monospace;
+    font-weight: 400;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--accent);
+    margin-bottom: 0.2rem;
+  }
+  h3 {
+    font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--text);
+    margin: 1.6rem 0 0.5rem;
+    letter-spacing: -0.01em;
+  }
+  p { margin-bottom: 0.9rem; max-width: 68ch; }
+  p:last-child { margin-bottom: 0; }
+
+  /* ── Code ────────────────────────────────────────────────────────────── */
+  code {
+    font-family: ui-monospace, 'Cascadia Code', 'Fira Code', monospace;
+    font-size: 0.82em;
+    background: var(--bg3);
+    color: var(--text);
+    padding: 0.1em 0.35em;
+    border-radius: 3px;
+    border: 1px solid var(--border);
+  }
+  pre {
+    background: var(--code-bg);
+    color: var(--code-text);
+    font-family: ui-monospace, 'Cascadia Code', 'Fira Code', monospace;
+    font-size: 0.82rem;
+    line-height: 1.65;
+    padding: 1.2rem 1.4rem;
+    border-radius: 6px;
+    overflow-x: auto;
+    margin: 1.1rem 0 1.3rem;
+    border: 1px solid var(--border);
+    max-width: 100%;
+  }
+  pre code {
+    background: none;
+    border: none;
+    padding: 0;
+    font-size: inherit;
+    color: inherit;
+  }
+  .cm  { color: var(--code-comment); }   /* comment */
+  .ky  { color: #c792ea; }               /* keyword */
+  .st  { color: #c3e88d; }               /* string */
+  .nm  { color: #f78c6c; }               /* number */
+  .fn  { color: #82aaff; }               /* function */
+  .op  { color: var(--accent-dim); }     /* operator / key */
+
+  /* ── Round diagram ───────────────────────────────────────────────────── */
+  .round-diagram {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    margin: 1.3rem 0;
+    max-width: 600px;
+  }
+  .phase {
+    display: grid;
+    grid-template-columns: 7rem 1fr;
+    gap: 0;
+    border: 1px solid var(--border);
+    border-bottom: none;
+    background: var(--bg2);
+  }
+  .phase:first-child { border-radius: 6px 6px 0 0; }
+  .phase:last-child  { border-bottom: 1px solid var(--border); border-radius: 0 0 6px 6px; }
+  .phase-num {
+    background: var(--accent);
+    color: var(--bg);
+    font-family: ui-monospace, 'Cascadia Code', 'Fira Code', monospace;
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    padding: 0.7rem 0.9rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+  }
+  .phase-num span { font-size: 0.58rem; font-weight: 400; opacity: 0.8; text-transform: uppercase; letter-spacing: 0.1em; }
+  .phase-body { padding: 0.65rem 1rem; }
+  .phase-body strong {
+    font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+    font-size: 0.85rem;
+    font-weight: 700;
+    display: block;
+    margin-bottom: 0.1rem;
+    color: var(--text);
+  }
+  .phase-body p {
+    font-size: 0.82rem;
+    color: var(--text2);
+    margin: 0;
+    max-width: none;
+    line-height: 1.5;
+  }
+
+  /* ── Formula box ─────────────────────────────────────────────────────── */
+  .formula {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    border-radius: 4px;
+    padding: 1rem 1.25rem;
+    font-family: ui-monospace, 'Cascadia Code', 'Fira Code', monospace;
+    font-size: 0.88rem;
+    line-height: 1.8;
+    margin: 1rem 0;
+    overflow-x: auto;
+  }
+  .formula .label {
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--accent);
+    margin-bottom: 0.4rem;
+  }
+
+  /* ── Callout ─────────────────────────────────────────────────────────── */
+  .callout {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 1rem 1.25rem;
+    margin: 1.2rem 0;
+    font-size: 0.9rem;
+    background: var(--bg2);
+  }
+  .callout.warn {
+    border-color: var(--warn);
+    background: var(--warn-bg);
+    color: var(--warn);
+  }
+  .callout.info {
+    border-color: var(--tag);
+    background: var(--tag-bg);
+    color: var(--tag);
+  }
+  .callout strong { font-family: system-ui, sans-serif; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.08em; display: block; margin-bottom: 0.35rem; }
+  .callout p { color: var(--text); margin: 0; max-width: none; }
+
+  /* ── Table ───────────────────────────────────────────────────────────── */
+  .table-wrap { overflow-x: auto; margin: 1rem 0; }
+  table { border-collapse: collapse; width: 100%; font-size: 0.85rem; font-family: ui-monospace, 'Cascadia Code', 'Fira Code', monospace; }
+  th {
+    text-align: left;
+    padding: 0.55rem 0.9rem;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.09em;
+    color: var(--text2);
+    font-weight: 600;
+  }
+  td {
+    padding: 0.5rem 0.9rem;
+    border: 1px solid var(--border);
+    color: var(--text);
+    vertical-align: top;
+    line-height: 1.5;
+  }
+  tr:nth-child(even) td { background: var(--bg2); }
+  td:first-child { color: var(--accent); }
+
+  /* ── Behavior mode chips ──────────────────────────────────────────────── */
+  .modes {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 0.75rem;
+    margin: 1rem 0;
+  }
+  .mode-card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 0.85rem 1rem;
+  }
+  .mode-card .mode-name {
+    font-family: ui-monospace, 'Cascadia Code', 'Fira Code', monospace;
+    font-size: 0.75rem;
+    color: var(--accent);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 0.35rem;
+  }
+  .mode-card p { font-size: 0.82rem; color: var(--text2); margin: 0; max-width: none; }
+
+  /* ── CLI block ───────────────────────────────────────────────────────── */
+  .cli { display: flex; flex-direction: column; gap: 0.5rem; margin: 1rem 0; }
+  .cli-line {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 0.65rem 1rem;
+    font-family: ui-monospace, 'Cascadia Code', 'Fira Code', monospace;
+    font-size: 0.82rem;
+    display: flex;
+    gap: 0.75rem;
+    align-items: baseline;
+  }
+  .cli-line .prompt { color: var(--accent); user-select: none; }
+  .cli-line .cmd { color: var(--code-text); flex: 1; }
+  .cli-line .note { font-size: 0.72rem; color: var(--code-comment); }
+
+  /* ── Bankruptcy timeline ──────────────────────────────────────────────── */
+  .timeline {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    position: relative;
+    margin: 1.1rem 0;
+    padding-left: 1.5rem;
+    border-left: 2px solid var(--border);
+  }
+  .timeline-item {
+    padding: 0.6rem 0 0.6rem 1rem;
+    position: relative;
+  }
+  .timeline-item::before {
+    content: '';
+    position: absolute;
+    left: -1.57rem;
+    top: 0.9rem;
+    width: 0.6rem;
+    height: 0.6rem;
+    border-radius: 50%;
+    background: var(--accent);
+    border: 2px solid var(--bg);
+  }
+  .timeline-item .ti-label {
+    font-family: ui-monospace, 'Cascadia Code', 'Fira Code', monospace;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.09em;
+    color: var(--accent);
+    margin-bottom: 0.15rem;
+  }
+  .timeline-item p { font-size: 0.85rem; color: var(--text2); margin: 0; max-width: none; }
+
+  /* ── Divider ──────────────────────────────────────────────────────────── */
+  hr { border: none; border-top: 1px solid var(--border); margin: 2.5rem 0; }
+
+  /* ── Scrollspy ───────────────────────────────────────────────────────── */
+  @media (prefers-reduced-motion: no-preference) {
+    .section { opacity: 0; transform: translateY(10px); animation: fadein 0.3s ease forwards; }
+    @keyframes fadein { to { opacity: 1; transform: none; } }
+    .section:nth-child(2) { animation-delay: 0.04s; }
+    .section:nth-child(3) { animation-delay: 0.08s; }
+    .section:nth-child(4) { animation-delay: 0.12s; }
+    .section:nth-child(5) { animation-delay: 0.16s; }
+    .section:nth-child(6) { animation-delay: 0.20s; }
+    .section:nth-child(7) { animation-delay: 0.24s; }
+    .section:nth-child(8) { animation-delay: 0.28s; }
+  }
+</style>
+</head>
+<body>
+<div class="shell">
+  <!-- Sidebar -->
+  <nav class="sidebar" aria-label="Guide sections">
+    <div class="sidebar-logo">econ-agents<br>model guide</div>
+    <div class="nav-section">Architecture</div>
+    <a href="#overview">Overview</a>
+    <a href="#round-loop">Round Loop</a>
+    <div class="nav-section">Agents</div>
+    <a href="#consumers">Consumer Agents</a>
+    <a href="#suppliers">Supplier Agents</a>
+    <div class="nav-section">Market</div>
+    <a href="#market">Price & Clearing</a>
+    <div class="nav-section">Configuration</div>
+    <a href="#yaml">YAML Config</a>
+    <a href="#running">Running Scenarios</a>
+    <div class="nav-section">Dynamics</div>
+    <a href="#dynamics">What to Watch For</a>
+  </nav>
+
+  <!-- Main -->
+  <main class="main">
+    <header class="doc-header">
+      <p class="doc-eyebrow">Technical Guide</p>
+      <h1 class="doc-title">How econ-agents works</h1>
+      <p class="doc-subtitle">A closed-loop economic simulation: agent-based consumers and rational suppliers operating in a shared market, driven entirely by YAML configuration.</p>
+    </header>
+
+    <!-- OVERVIEW -->
+    <section class="section" id="overview">
+      <h2 class="section-title"><small>01 — Architecture</small>Overview</h2>
+      <p>The system simulates a single commodity market over a configurable number of discrete rounds. In each round, a population of consumer agents and a pool of supplier agents independently observe the current state of the market, make decisions, and those decisions feed into a market clearing algorithm that sets the next price.</p>
+      <p>The loop is fully closed: price changes affect consumer behaviour, which affects demand, which affects stock levels, which affects price. Suppliers respond to price signals and commit production orders that arrive after a configurable lag — creating the delayed feedback loops that produce real-world commodity cycles.</p>
+      <p>Everything is configured in YAML. No code changes are required to run a new scenario — you describe agent populations, supplier economics, price algorithm parameters, and shock schedules, then run the simulation from the command line.</p>
+      <div class="callout info">
+        <strong>Key design choice</strong>
+        <p>All agent decisions happen concurrently via <code>asyncio.gather</code>. Agents see the same world snapshot and cannot react to each other's decisions within the same round. This is the sealed-bid auction model, not sequential bargaining.</p>
+      </div>
+    </section>
+
+    <!-- ROUND LOOP -->
+    <section class="section" id="round-loop">
+      <h2 class="section-title"><small>02 — Architecture</small>The Six-Phase Round Loop</h2>
+      <p>Every round executes exactly six phases in sequence. Only phase 3 (Decide) runs concurrently; the rest are sequential.</p>
+
+      <div class="round-diagram">
+        <div class="phase">
+          <div class="phase-num">SHOCK<span>phase 1</span></div>
+          <div class="phase-body">
+            <strong>Apply exogenous events</strong>
+            <p>Scheduled shocks from the YAML config fire here — price shocks, stock destruction events, production cost changes. They alter market state before anyone observes it this round.</p>
+          </div>
+        </div>
+        <div class="phase">
+          <div class="phase-num">OBSERVE<span>phase 2</span></div>
+          <div class="phase-body">
+            <strong>Snapshot the world</strong>
+            <p>A frozen <code>WorldSnapshot</code> is taken: current price, stock level, pipeline totals, price change % from last round. All agents will see this identical snapshot when deciding.</p>
+          </div>
+        </div>
+        <div class="phase">
+          <div class="phase-num">DECIDE<span>phase 3</span></div>
+          <div class="phase-body">
+            <strong>Agents decide — concurrently</strong>
+            <p>All consumer and supplier coroutines run in parallel via <code>asyncio.gather</code>. Each agent reads the snapshot, evaluates its rules, and returns a decision. Agents cannot observe each other's choices.</p>
+          </div>
+        </div>
+        <div class="phase">
+          <div class="phase-num">HARVEST<span>phase 4</span></div>
+          <div class="phase-body">
+            <strong>Pipeline deliveries arrive</strong>
+            <p>Production orders placed in earlier rounds whose <code>arrive_round</code> equals the current round are pulled from the pipeline queue and added to market stock.</p>
+          </div>
+        </div>
+        <div class="phase">
+          <div class="phase-num">CLEAR<span>phase 5</span></div>
+          <div class="phase-body">
+            <strong>Demand meets stock; price is set</strong>
+            <p>Total consumer demand is summed. Actual consumption is <code>min(demand, stock)</code>. The shortfall (if any) is logged. The price algorithm then reads the post-consumption stock level and computes next round's price.</p>
+          </div>
+        </div>
+        <div class="phase">
+          <div class="phase-num">PLACE<span>phase 6</span></div>
+          <div class="phase-body">
+            <strong>Supplier orders enter the pipeline</strong>
+            <p>Each supplier's new production rate becomes an order scheduled to arrive <code>production_lag</code> rounds from now. The supplier tracks its own pending orders separately for use in next round's observation.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- CONSUMERS -->
+    <section class="section" id="consumers">
+      <h2 class="section-title"><small>03 — Agents</small>Consumer Agents</h2>
+      <p>The consumer population is divided into types, each with a proportion of the total population size. Each agent type has a <strong>behavior mode</strong> and a set of rules expressed in a safe expression DSL.</p>
+
+      <h3>Behavior Modes</h3>
+      <div class="modes">
+        <div class="mode-card">
+          <div class="mode-name">deterministic</div>
+          <p>Evaluates rules in order; first matching condition fires. Fully predictable given the same market state.</p>
+        </div>
+        <div class="mode-card">
+          <div class="mode-name">stochastic</div>
+          <p>No rules — picks an action by weighted random draw from a <code>stochastic_actions</code> list each round.</p>
+        </div>
+        <div class="mode-card">
+          <div class="mode-name">mixed</div>
+          <p>Rules are checked first. If none match, falls back to the stochastic weighted draw. Best of both: panic rules override random noise.</p>
+        </div>
+      </div>
+
+      <h3>The Rule DSL</h3>
+      <p>Conditions are Python-compatible arithmetic expressions evaluated against a per-agent observation dict. The evaluator is a safe AST walker — no <code>eval()</code>, no builtins, only arithmetic operators and comparisons.</p>
+
+      <pre><code><span class="cm"># Example rule in a YAML config</span>
+- condition: <span class="st">"price_change_pct > 15 or stock_ratio < 0.5"</span>
+  action: buy_more
+  quantity_factor: <span class="nm">3.0</span>
+  label: <span class="st">"panic hoard: big spike or severe shortage"</span></code></pre>
+
+      <h3>Observation Variables</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Variable</th><th>Meaning</th></tr></thead>
+          <tbody>
+            <tr><td>price</td><td>Current market price this round</td></tr>
+            <tr><td>price_change_pct</td><td>% change vs previous round (negative = falling)</td></tr>
+            <tr><td>stock_ratio</td><td>current_stock / target_stock (1.0 = at buffer, &lt;1 = shortage)</td></tr>
+            <tr><td>stock</td><td>Absolute units in warehouse</td></tr>
+            <tr><td>pipeline_total</td><td>Total units in the market's production pipeline (not yet arrived)</td></tr>
+            <tr><td>round</td><td>Current round number</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Quantity Demanded</h3>
+      <p>Each action (<code>buy_more</code>, <code>buy_less</code>, <code>hold</code>, <code>no_change</code>) maps to a <code>quantity_factor</code> multiplied against the agent's <code>base_quantity</code>. <code>hold</code> means zero demand this round. <code>no_change</code> means exactly <code>base_quantity</code>. Total market demand is the sum across all agents.</p>
+    </section>
+
+    <!-- SUPPLIERS -->
+    <section class="section" id="suppliers">
+      <h2 class="section-title"><small>04 — Agents</small>Supplier Agents</h2>
+      <p>Suppliers are rational producers who observe market price, their own production cost, and market/pipeline conditions to decide whether to expand or contract output.</p>
+
+      <h3>Rate Adjustment</h3>
+      <p>Each round, a supplier evaluates its rules and selects an <code>adjustment_factor</code> (a signed fraction, e.g. <code>0.10</code> for +10%). The new rate is:</p>
+      <div class="formula">
+        <div class="label">Rate Update</div>
+        new_rate = max(min_production_rate, old_rate × (1 + adj))<br>
+        adj = clamp(raw_adj, −max_ramp_down, +max_ramp_up)
+      </div>
+      <p>The <code>min_production_rate</code> floor prevents the multiplicative zero-trap: a supplier that cuts to 0 via normal rules can never recover through further rate multiplication. Only bankruptcy (rate forced to exactly 0) bypasses the floor.</p>
+
+      <h3>Production Lag</h3>
+      <p>Orders placed in phase 6 arrive exactly <code>production_lag</code> rounds later. A supplier with lag=5 committing to a new rate today won't see that output land in the market until round N+5. This is the primary driver of commodity cycle dynamics — suppliers over-ramp relative to what the market actually needs, because the lag obscures the demand signal.</p>
+
+      <h3>Own Pipeline Tracking</h3>
+      <p>Each supplier tracks its own pending orders separately from the market-wide pipeline. The observation variable <code>own_pipeline_rounds</code> tells a supplier how many rounds-worth of current-rate production it already has in flight. This prevents double-ordering without relying on the market aggregate (which mixes all suppliers).</p>
+      <div class="callout warn">
+        <strong>Pipeline caution rules have a known limitation</strong>
+        <p>During a ramp-up phase, <code>own_pipeline_rounds</code> always converges to slightly below the production lag — because older orders in the pipeline were placed at lower (pre-ramp) rates. A caution threshold above the lag can never trigger during steady ramping. Place <code>stock_ratio</code>-based cut rules <em>before</em> generic margin-expansion rules to guard against this.</p>
+      </div>
+
+      <h3>Supplier Observation Variables</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Variable</th><th>Meaning</th></tr></thead>
+          <tbody>
+            <tr><td>margin</td><td>price / production_cost (1.0 = break-even)</td></tr>
+            <tr><td>price_change_pct</td><td>% change in market price vs last round</td></tr>
+            <tr><td>stock_ratio</td><td>market stock / target stock</td></tr>
+            <tr><td>own_pipeline_total</td><td>Total units this supplier has in transit</td></tr>
+            <tr><td>own_pipeline_rounds</td><td>own_pipeline_total / current_rate</td></tr>
+            <tr><td>market_pipeline_total</td><td>All units in the market pipeline (all suppliers)</td></tr>
+            <tr><td>consecutive_loss_rounds</td><td>Rounds this supplier has operated with margin &lt; 1.0</td></tr>
+            <tr><td>bankrupt</td><td>1.0 if bankrupt (rate forced to 0), else 0.0</td></tr>
+            <tr><td>current_production_rate</td><td>Current rate before this round's adjustment</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Bankruptcy Mechanic</h3>
+      <p>When a supplier operates below its production cost (<code>margin &lt; 1.0</code>), it accumulates <code>consecutive_loss_rounds</code>. After <code>bankruptcy_threshold</code> rounds of sustained losses, it goes bankrupt: rate is forced to zero and no further orders are placed.</p>
+      <div class="timeline">
+        <div class="timeline-item">
+          <div class="ti-label">Normal operation</div>
+          <p>Rules fire normally. Rate bounded below by <code>min_production_rate</code>.</p>
+        </div>
+        <div class="timeline-item">
+          <div class="ti-label">Below cost — loss streak begins</div>
+          <p><code>consecutive_loss_rounds</code> increments. Pre-bankruptcy rules can fire emergency cuts (e.g. <code>consecutive_loss_rounds >= N-1</code>).</p>
+        </div>
+        <div class="timeline-item">
+          <div class="ti-label">Bankruptcy threshold crossed</div>
+          <p>Supplier exits: <code>bankrupt = True</code>, rate → 0. No orders placed.</p>
+        </div>
+        <div class="timeline-item">
+          <div class="ti-label">Market recovery</div>
+          <p>Each round, the supplier checks if <code>margin >= restart_margin</code>. If yes: <code>bankrupt = False</code>, rate restarts at <code>restart_rate</code>, loss streak resets.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- MARKET -->
+    <section class="section" id="market">
+      <h2 class="section-title"><small>05 — Market</small>Price Algorithm &amp; Clearing</h2>
+
+      <h3>Stock-Based Pricing</h3>
+      <p>The only implemented price algorithm is <code>stock_based</code>. After each round's consumption, the remaining stock is compared to a target buffer. The price moves to reflect scarcity:</p>
+      <div class="formula">
+        <div class="label">Price Update (stock_based)</div>
+        target_stock = demand_avg × target_stock_days<br><br>
+        Δprice = −elasticity × ln(stock / target_stock)<br><br>
+        new_price = clamp(old_price × e<sup>Δprice</sup>, min_price, max_price)
+      </div>
+      <p><code>demand_avg</code> is a rolling average over the last <code>demand_window</code> rounds, making the target adaptive. When <code>stock &lt; target_stock</code>, the log term is negative, Δprice is positive — price rises. When stock exceeds target, price falls. The <code>elasticity</code> parameter controls how aggressively price responds to the imbalance.</p>
+
+      <h3>Market Clearing</h3>
+      <p>At the end of phase 5, demand is settled against whatever stock is on hand after pipeline deliveries:</p>
+      <div class="formula">
+        <div class="label">Clearing</div>
+        actual_consumption = min(demand, stock_after_harvest)<br>
+        shortage           = max(0, demand − actual_consumption)<br>
+        fill_rate          = actual_consumption / demand<br>
+        stock_after        = stock_after_harvest − actual_consumption
+      </div>
+      <p>No partial rationing model is applied — demand is either filled or it isn't. The shortage is reported but does not directly affect agent decisions in the same round (agents see the pre-clearing snapshot).</p>
+
+      <h3>Shock Types</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Type</th><th>Effect</th><th>Example</th></tr></thead>
+          <tbody>
+            <tr><td>price_shock</td><td>Multiplies current price by <code>(1 + delta_pct/100)</code> before observe phase</td><td>+25% → price × 1.25</td></tr>
+            <tr><td>stock_shock</td><td>Multiplies current stock by <code>(1 + delta_pct/100)</code></td><td>−40% → removes 40% of warehouse</td></tr>
+            <tr><td>cost_shock</td><td>Multiplies market's blended production_cost; also propagates to all supplier agents' individual costs</td><td>+10% → all suppliers more expensive</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- YAML -->
+    <section class="section" id="yaml">
+      <h2 class="section-title"><small>06 — Configuration</small>YAML Structure</h2>
+      <p>A scenario is a single YAML file. The top-level keys are:</p>
+      <pre><code><span class="op">seed</span>: <span class="nm">42</span>           <span class="cm"># RNG seed for reproducible stochastic runs</span>
+<span class="op">rounds</span>: <span class="nm">50</span>        <span class="cm"># how many rounds to simulate</span>
+
+<span class="op">markets</span>:
+  <span class="op">rice</span>:             <span class="cm"># market name (referenced by agents)</span>
+    initial_price: <span class="nm">1.00</span>
+    initial_stock: <span class="nm">5000</span>
+    production_cost: <span class="nm">0.65</span>
+    price_algorithm:
+      type: <span class="st">stock_based</span>
+      target_stock_days: <span class="nm">10</span>
+      elasticity: <span class="nm">0.25</span>
+      demand_window: <span class="nm">3</span>
+      min_price: <span class="nm">0.20</span>
+      max_price: <span class="nm">4.00</span>
+
+<span class="op">suppliers</span>:
+  - id: <span class="st">large_producer</span>
+    count: <span class="nm">2</span>           <span class="cm"># number of agents of this type</span>
+    market: <span class="st">rice</span>
+    production_cost: <span class="nm">0.60</span>
+    initial_production_rate: <span class="nm">300</span>
+    production_lag: <span class="nm">5</span>
+    max_ramp_up: <span class="nm">0.10</span>
+    max_ramp_down: <span class="nm">0.20</span>
+    bankruptcy_threshold: <span class="nm">8</span>
+    restart_rate: <span class="nm">30</span>
+    restart_margin: <span class="nm">1.35</span>
+    min_production_rate: <span class="nm">15</span>
+    rules:
+      - condition: <span class="st">"stock_ratio > 2.0"</span>
+        action: decrease_production
+        adjustment_factor: <span class="nm">-0.10</span>
+        label: <span class="st">"glut — cut"</span>
+
+<span class="op">consumers</span>:
+  size: <span class="nm">1000</span>
+  agent_types:
+    - id: <span class="st">hoarder</span>
+      proportion: <span class="nm">0.20</span>  <span class="cm"># fraction of total size</span>
+      mode: <span class="st">deterministic</span>
+      base_quantity: <span class="nm">1.0</span>
+      rules:
+        - condition: <span class="st">"price_change_pct > 8"</span>
+          action: buy_more
+          quantity_factor: <span class="nm">2.0</span>
+          label: <span class="st">"hoard on spike"</span>
+
+<span class="op">shocks</span>:
+  - round: <span class="nm">6</span>
+    type: <span class="st">stock_shock</span>
+    market: <span class="st">rice</span>
+    delta_pct: <span class="nm">-20.0</span>
+    description: <span class="st">"Flood destroys 20% of warehouse stock"</span></code></pre>
+
+      <h3>Key calibration tips</h3>
+      <p><strong>Baseline equilibrium.</strong> Set initial supply ≈ baseline demand. With 1000 consumers at <code>base_quantity: 1.0</code>, baseline demand is roughly 700–900 (stochastic + hold actions reduce it). Total supplier <code>count × initial_production_rate</code> should match this.</p>
+      <p><strong>Target stock buffer.</strong> <code>target_stock = target_stock_days × demand_avg</code>. Set <code>initial_stock</code> near this value to start at a neutral price. Starting below target makes the price spike immediately; starting above makes it fall.</p>
+      <p><strong>Rule ordering matters.</strong> Rules are first-match. Put glut-detection cut rules <em>before</em> margin-expansion rules, or a profitable supplier will keep ramping even into a glutted market.</p>
+    </section>
+
+    <!-- RUNNING -->
+    <section class="section" id="running">
+      <h2 class="section-title"><small>07 — CLI</small>Running Scenarios</h2>
+      <div class="cli">
+        <div class="cli-line">
+          <span class="prompt">$</span>
+          <span class="cmd">python main.py configs/rice_price.yaml</span>
+          <span class="note"># rich live display</span>
+        </div>
+        <div class="cli-line">
+          <span class="prompt">$</span>
+          <span class="cmd">python main.py configs/wheat_crisis.yaml --no-viz</span>
+          <span class="note"># plain text output</span>
+        </div>
+        <div class="cli-line">
+          <span class="prompt">$</span>
+          <span class="cmd">python main.py configs/semiconductor_shortage.yaml --rounds 60</span>
+          <span class="note"># override rounds</span>
+        </div>
+        <div class="cli-line">
+          <span class="prompt">$</span>
+          <span class="cmd">python main.py configs/coffee_harvest_failure.yaml --export-gif coffee.gif</span>
+          <span class="note"># animated 4-panel GIF</span>
+        </div>
+        <div class="cli-line">
+          <span class="prompt">$</span>
+          <span class="cmd">python main.py configs/oil_glut.yaml --output-json oil.json</span>
+          <span class="note"># full decision log</span>
+        </div>
+        <div class="cli-line">
+          <span class="prompt">$</span>
+          <span class="cmd">python main.py configs/rice_price.yaml --delay 0.5</span>
+          <span class="note"># slow down live display</span>
+        </div>
+      </div>
+      <p>All flags can be combined. The config path is the only positional argument and defaults to <code>configs/rice_price.yaml</code>.</p>
+    </section>
+
+    <!-- DYNAMICS -->
+    <section class="section" id="dynamics">
+      <h2 class="section-title"><small>08 — Dynamics</small>What to Watch For</h2>
+
+      <h3>The Cobweb / Commodity Cycle</h3>
+      <p>The most reliable emergent pattern. A supply shock causes prices to spike. Suppliers ramp output, but their orders don't land until several rounds later. By the time the new supply arrives, other suppliers have also ramped — a glut forms, price collapses, suppliers exit or go bankrupt, and the cycle begins again. Longer production lags produce more violent cycles.</p>
+
+      <h3>The Bullwhip Effect</h3>
+      <p>Consumer demand variability amplifies as it travels upstream. A 10% demand spike causes suppliers to over-order by a much larger factor, because each supplier is also guarding against the worst case and the lag makes the demand signal stale. Scenarios with long lags (semiconductor, wheat) show this most vividly.</p>
+
+      <h3>Supplier Asymmetry</h3>
+      <p>When supplier types have different cost structures and bankruptcy thresholds, the glut phase becomes a shakeout. High-cost suppliers go bankrupt first; low-cost suppliers weather the floor price. After the shakeout, the surviving concentrated market can sustain a permanent price above pre-crisis levels (the oil_glut scenario demonstrates this).</p>
+
+      <h3>Reading the Summary Table</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Signal</th><th>What it means</th></tr></thead>
+          <tbody>
+            <tr><td>Price at max_price for many rounds</td><td>Supply chain crisis — stock exhausted, no relief from pipeline yet</td></tr>
+            <tr><td>Price at min_price + growing stock</td><td>Glut phase — suppliers are cutting but pipeline orders still arriving</td></tr>
+            <tr><td>fill_rate &lt; 100%</td><td>Demand exceeded supply — rationing occurred, shortage counted</td></tr>
+            <tr><td>Supplier action = bankrupt</td><td>Capital exhausted; that supplier is idle until margin recovers</td></tr>
+            <tr><td>Supplier action = restart</td><td>Re-entry at restart_rate — new cycle beginning</td></tr>
+            <tr><td>Supplier action = maintain (many rounds)</td><td>Pipeline caution firing — or no rule matched</td></tr>
+            <tr><td>stock_ratio ≫ 1 and price rising</td><td>Demand shock overriding the glut signal — check for recent price_shock</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="callout info">
+        <strong>Included scenarios</strong>
+        <p><code>rice_price.yaml</code> — baseline 20-round demonstration · <code>wheat_crisis.yaml</code> — export ban, 50 rounds · <code>semiconductor_shortage.yaml</code> — chip cycle with AI supercycle restart, 120 rounds · <code>oil_glut.yaml</code> — OPEC vs shale shakeout, 55 rounds · <code>coffee_harvest_failure.yaml</code> — sequential crop failures, 55 rounds</p>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script>
+  // Scrollspy
+  const links = document.querySelectorAll('.sidebar a');
+  const sections = document.querySelectorAll('.section');
+  const obs = new IntersectionObserver(entries => {
+    entries.forEach(e => {
+      if (e.isIntersecting) {
+        links.forEach(l => l.classList.toggle('active', l.getAttribute('href') === '#' + e.target.id));
+      }
+    });
+  }, { rootMargin: '-20% 0px -70% 0px' });
+  sections.forEach(s => obs.observe(s));
+</script>
+</body>
+</html>
