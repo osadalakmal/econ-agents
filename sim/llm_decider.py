@@ -32,7 +32,7 @@ _RESPONSE_SCHEMA = {
 @dataclass
 class LLMDeciderConfig:
     base_url: str = "http://localhost:1234/v1"
-    model: str = "qwen3-4b"
+    model: str = "qwen/qwen3-4b-thinking-2507:2"
     timeout_s: float = 8.0
     max_retries: int = 2
     fallback_action: str = "no_change"

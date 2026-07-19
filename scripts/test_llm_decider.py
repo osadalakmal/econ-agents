@@ -164,7 +164,7 @@ async def run_test(cfg: LLMDeciderConfig, bench_n: int = 0) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description="LLM decider acceptance / benchmark test")
     parser.add_argument("--base-url", default="http://localhost:1234/v1")
-    parser.add_argument("--model", default="qwen3-4b")
+    parser.add_argument("--model", default="qwen/qwen3-4b-thinking-2507:2")
     parser.add_argument("--timeout", type=float, default=8.0)
     parser.add_argument("--bench", type=int, default=0, metavar="N",
                         help="Benchmark mode: run N sequential calls to measure throughput")
