@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -127,7 +128,11 @@ async def decide_llm(
                 ),
                 timeout=config.timeout_s,
             )
-            data = json.loads(resp.choices[0].message.content)
+            raw = resp.choices[0].message.content or ""
+            # Thinking models (e.g. Qwen3-thinking) prepend <think>...</think>
+            # blocks before the JSON payload — strip them before parsing.
+            raw = re.sub(r"<think>.*?</think>", "", raw, flags=re.DOTALL).strip()
+            data = json.loads(raw)
             action = data.get("action", config.fallback_action)
             if action not in _VALID_ACTIONS:
                 log.warning("LLM returned invalid action %r — using fallback", action)
