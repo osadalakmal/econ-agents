@@ -117,12 +117,25 @@ def _render(
 
     for sd in s["supplier_decisions"]:
         adj = sd["adj_pct"]
-        adj_color = "red" if adj > 0 else ("green" if adj < 0 else "dim")
-        adj_str = f"{adj:+.0f}%" if adj != 0 else "="
+        is_bankrupt = sd.get("bankrupt", False)
+        loss_streak = sd.get("consecutive_loss_rounds", 0)
+        if is_bankrupt:
+            adj_str = "BANKRUPT"
+            adj_color = "bold red"
+        elif adj > 0:
+            adj_str = f"{adj:+.0f}%"
+            adj_color = "red"
+        elif adj < 0:
+            adj_str = f"{adj:+.0f}%"
+            adj_color = "green"
+        else:
+            adj_str = "="
+            adj_color = "dim"
+        streak_suffix = f" ({loss_streak}L)" if loss_streak > 0 and not is_bankrupt else ""
         sup.add_row(
-            Text(f"[{sd['type']}] #{sd['id']}", style="bold"),
-            Text(f"{sd['old_rate']:.0f} → {sd['new_rate']:.0f}", style="white"),
-            Text(adj_str, style=adj_color),
+            Text(f"[{sd['type']}] #{sd['id']}", style="bold red" if is_bankrupt else "bold"),
+            Text(f"{sd['old_rate']:.0f} → {sd['new_rate']:.0f}", style="red dim" if is_bankrupt else "white"),
+            Text(adj_str + streak_suffix, style=adj_color),
         )
 
     supplier_panel = Panel(sup, title="[yellow]Suppliers[/yellow]", border_style="yellow")

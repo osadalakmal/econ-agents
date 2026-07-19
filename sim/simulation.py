@@ -74,6 +74,8 @@ class RoundResult:
                     "old_rate": round(d.old_rate, 1),
                     "new_rate": round(d.new_rate, 1),
                     "adj_pct": round(d.adjustment_pct, 1),
+                    "bankrupt": d.bankrupt,
+                    "consecutive_loss_rounds": d.consecutive_loss_rounds,
                     "reasoning": d.reasoning,
                 }
                 for d in self.supplier_decisions

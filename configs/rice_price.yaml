@@ -44,7 +44,17 @@ suppliers:
     production_lag: 5         # 5 rounds from decision to market arrival
     max_ramp_up: 0.10         # max 10% rate increase per round
     max_ramp_down: 0.20       # can cut 20% per round if margin collapses
+    # Bankruptcy / re-entry parameters
+    bankruptcy_threshold: 8   # rounds below cost before forced exit
+    restart_rate: 30          # 10% of initial rate when re-entering
+    restart_margin: 1.35      # need 35% margin above cost to restart
+    min_production_rate: 15   # floor: never falls below 5% of initial via rules alone
     rules:
+      # Approaching bankruptcy — cut sharply to preserve cash
+      - condition: "consecutive_loss_rounds >= 5"
+        action: decrease_production
+        adjustment_factor: -0.20
+        label: "sustained losses — emergency cut"
       # Own pipeline caution: if this supplier already has >lag+2 rounds queued,
       # pipeline is loaded — don't add more until it clears.
       - condition: "own_pipeline_rounds > 7"
@@ -85,7 +95,17 @@ suppliers:
     production_lag: 2         # smaller operations, faster to respond
     max_ramp_up: 0.15         # nimble but not unconstrained
     max_ramp_down: 0.40
+    # Bankruptcy / re-entry parameters
+    bankruptcy_threshold: 4   # thinner capital cushion; exit faster
+    restart_rate: 8           # 10% of initial rate when re-entering
+    restart_margin: 1.50      # need 50% margin above cost to restart (higher risk premium)
+    min_production_rate: 4    # floor: never falls below 5% of initial via rules alone
     rules:
+      # Approaching bankruptcy — cut hard
+      - condition: "consecutive_loss_rounds >= 3"
+        action: decrease_production
+        adjustment_factor: -0.40
+        label: "sustained losses — emergency cut"
       # Own pipeline caution: lag=2, so >4 rounds queued means well ahead
       - condition: "own_pipeline_rounds > 4"
         action: maintain
