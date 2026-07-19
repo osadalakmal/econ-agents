@@ -1,10 +1,16 @@
 """
-Behavior engine — interprets YAML-defined agent logic.
+Behavior engine — interprets YAML-defined consumer logic.
 
 Agent modes:
   deterministic  — evaluates ordered rules; first match wins
   stochastic     — picks action from a weighted probability table
   mixed          — tries deterministic rules first; falls back to stochastic
+
+quantity_demanded semantics (stock model):
+  buy_more / hoard  → base_quantity * factor   (factor > 1 → hoarding)
+  buy_less / reduce → base_quantity * factor   (factor < 1 → rationing)
+  hold / wait       → 0.0                      (drawing down own inventory)
+  no_change         → base_quantity            (normal consumption)
 """
 from __future__ import annotations
 
@@ -13,6 +19,7 @@ import operator as _op
 import random
 from dataclasses import dataclass, field
 from typing import Any
+
 
 # ---------------------------------------------------------------------------
 # Safe expression evaluator for rule conditions
@@ -43,7 +50,7 @@ def _eval(node: ast.AST, ctx: dict[str, Any]) -> Any:
         return node.value
     if isinstance(node, ast.Name):
         if node.id not in ctx:
-            raise KeyError(f"Unknown variable in condition: '{node.id}'")
+            raise KeyError(f"Unknown variable: '{node.id}'")
         return ctx[node.id]
     if isinstance(node, ast.BinOp):
         op = _OPS.get(type(node.op))
@@ -78,15 +85,15 @@ def eval_condition(expr: str, ctx: dict[str, Any]) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Data classes representing parsed behavior config
+# Behavior spec data classes
 # ---------------------------------------------------------------------------
 
 @dataclass
 class Rule:
-    condition: str           # e.g. "price_change_pct > 15"
-    action: str              # e.g. "buy_more"
+    condition: str
+    action: str
     quantity_factor: float = 1.0
-    label: str = ""          # human label for reporting
+    label: str = ""
 
 
 @dataclass
@@ -101,15 +108,26 @@ class BehaviorSpec:
     agent_type_id: str
     mode: str                          # deterministic | stochastic | mixed
     proportion: float
-    base_quantity: float = 1.0         # baseline units per round
+    base_quantity: float = 1.0
     rules: list[Rule] = field(default_factory=list)
     stochastic_actions: list[WeightedAction] = field(default_factory=list)
-    # mixed: try rules first, fall back to stochastic if no rule matches
 
 
 # ---------------------------------------------------------------------------
 # Behavior engine
 # ---------------------------------------------------------------------------
+
+def _action_to_quantity(action: str, base: float, factor: float) -> float:
+    """Convert action + factor into a concrete quantity demanded (>= 0)."""
+    if action in ("buy_more", "hoard", "stockpile"):
+        return base * factor
+    if action in ("buy_less", "reduce", "abstain"):
+        return base * factor   # factor < 1 encodes the reduction
+    if action in ("hold", "wait"):
+        return 0.0             # drawing down own inventory this round
+    # no_change, maintain: normal baseline consumption
+    return base
+
 
 class BehaviorEngine:
 
@@ -117,19 +135,15 @@ class BehaviorEngine:
         self.spec = spec
         self._rng = rng
 
-    def decide(self, observation: dict[str, Any]) -> tuple[str, float, str]:
-        """
-        Returns (action, quantity_delta, reasoning).
-        quantity_delta is signed: positive = buy more, negative = buy less.
-        """
+    def decide(self, obs: dict[str, Any]) -> tuple[str, float, str]:
+        """Return (action, quantity_demanded, reasoning)."""
         mode = self.spec.mode
-
         if mode == "deterministic":
-            return self._deterministic(observation)
+            return self._deterministic(obs)
         if mode == "stochastic":
             return self._stochastic()
         if mode == "mixed":
-            action, qty, reason = self._deterministic(observation)
+            action, qty, reason = self._deterministic(obs)
             if action != "no_change":
                 return action, qty, reason
             return self._stochastic()
@@ -139,31 +153,26 @@ class BehaviorEngine:
         for rule in self.spec.rules:
             try:
                 if eval_condition(rule.condition, obs):
-                    qty = self.spec.base_quantity * rule.quantity_factor
-                    return rule.action, _signed(rule.action, qty), rule.label or rule.condition
+                    qty = _action_to_quantity(
+                        rule.action, self.spec.base_quantity, rule.quantity_factor
+                    )
+                    return rule.action, qty, rule.label or rule.condition
             except Exception:
                 continue
-        return "no_change", 0.0, "no rule matched"
+        return "no_change", self.spec.base_quantity, "no rule matched"
 
     def _stochastic(self) -> tuple[str, float, str]:
         actions = self.spec.stochastic_actions
         weights = [a.weight for a in actions]
         chosen = self._rng.choices(actions, weights=weights, k=1)[0]
-        qty = self.spec.base_quantity * chosen.quantity_factor
-        return chosen.action, _signed(chosen.action, qty), "stochastic"
-
-
-def _signed(action: str, qty: float) -> float:
-    """Convert action name to signed quantity delta."""
-    if action in ("buy_more", "hoard", "stockpile"):
-        return abs(qty)
-    if action in ("buy_less", "reduce", "abstain"):
-        return -abs(qty)
-    return 0.0  # hold, wait, no_change, etc.
+        qty = _action_to_quantity(
+            chosen.action, self.spec.base_quantity, chosen.quantity_factor
+        )
+        return chosen.action, qty, "stochastic"
 
 
 # ---------------------------------------------------------------------------
-# Parse YAML config into BehaviorSpec list
+# Parse YAML config
 # ---------------------------------------------------------------------------
 
 def parse_behavior_specs(agent_types: list[dict]) -> list[BehaviorSpec]:

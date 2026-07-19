@@ -1,4 +1,4 @@
-"""Agent — an asyncio coroutine that observes and decides each round."""
+"""Consumer agents — observe market state and decide how much to buy."""
 from __future__ import annotations
 
 import asyncio
@@ -7,109 +7,89 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from .behaviors import BehaviorEngine, BehaviorSpec
-from .events import Decision, Stimulus
-from .world import WorldState
+from .events import ConsumerDecision
+from .world import WorldSnapshot
 
 
 @dataclass
 class AgentState:
-    """Per-agent persistent state across rounds."""
     agent_id: int
-    savings: float = 100.0     # arbitrary wealth units
-    inventory: float = 10.0    # units of tracked commodity on hand
+    savings: float = 100.0
+    inventory: float = 10.0
     history: list[str] = field(default_factory=list)
 
 
-class Agent:
+class ConsumerAgent:
     """
-    Each agent runs as an asyncio coroutine during the DECIDE phase.
-    Agents never share mutable state — they only read WorldState snapshots.
+    Observes current market prices and stock signals; produces a demand decision.
+    Runs as an asyncio coroutine so all 1000+ agents decide concurrently.
     """
 
     def __init__(
         self,
         agent_id: int,
         spec: BehaviorSpec,
+        market_name: str,
         seed: int | None = None,
     ) -> None:
         self.agent_id = agent_id
         self.agent_type = spec.agent_type_id
+        self._market = market_name
         self._engine = BehaviorEngine(spec, rng=random.Random(seed))
         self.state = AgentState(agent_id=agent_id)
 
-    async def decide(
-        self,
-        world: WorldState,
-        stimulus: Stimulus,
-    ) -> Decision:
-        """
-        Async so all agents can run concurrently via asyncio.gather.
-        CPU-bound work stays minimal; heavy models could await a thread pool.
-        """
-        # Agents build their observation from the world state + stimulus
-        obs = self._build_observation(world, stimulus)
-
-        # Yield control briefly — lets other coroutines interleave
-        await asyncio.sleep(0)
-
-        action, qty_delta, reasoning = self._engine.decide(obs)
-
-        self.state.history.append(f"R{world.round}: {action} ({reasoning})")
-
-        return Decision(
+    async def decide(self, world: WorldSnapshot) -> ConsumerDecision:
+        obs = self._build_observation(world)
+        await asyncio.sleep(0)  # yield — lets other coroutines interleave
+        action, qty_demanded, reasoning = self._engine.decide(obs)
+        self.state.history.append(f"R{world.round}: {action} qty={qty_demanded:.2f}")
+        return ConsumerDecision(
             agent_id=self.agent_id,
             agent_type=self.agent_type,
-            commodity=stimulus.commodity,
+            market=self._market,
             action=action,
-            quantity_delta=qty_delta,
+            quantity_demanded=qty_demanded,
             reasoning=reasoning,
         )
 
-    def _build_observation(
-        self, world: WorldState, stimulus: Stimulus
-    ) -> dict[str, Any]:
-        """Merge world state and stimulus into a flat observation dict."""
-        obs: dict[str, Any] = {}
-        obs.update(stimulus.observation())
-
-        com = world.commodities.get(stimulus.commodity)
-        if com:
-            obs["current_price"] = com.price
-            obs["current_supply"] = com.supply
-
-        obs["agent_savings"] = self.state.savings
-        obs["agent_inventory"] = self.state.inventory
-        obs["round"] = world.round
-        return obs
+    def _build_observation(self, world: WorldSnapshot) -> dict[str, Any]:
+        mkt = world.market(self._market)
+        return {
+            # Market signals
+            "price": mkt["price"],
+            "price_change_pct": mkt["price_change_pct"],
+            "stock_ratio": mkt["stock_ratio"],   # < 1 = shortage
+            "stock": mkt["stock"],
+            "pipeline_total": mkt["pipeline_total"],
+            # Agent state
+            "agent_savings": self.state.savings,
+            "agent_inventory": self.state.inventory,
+            "round": world.round,
+        }
 
 
-def build_agent_pool(
+def build_consumer_pool(
     specs: list[BehaviorSpec],
     population_size: int,
+    market_name: str,
     seed: int = 42,
-) -> list[Agent]:
-    """
-    Distribute agents across specs according to proportion.
-    Proportions are normalised if they don't sum to 1.
-    """
+) -> list[ConsumerAgent]:
     rng = random.Random(seed)
     total = sum(s.proportion for s in specs)
-    agents: list[Agent] = []
-    agent_id = 0
+    agents: list[ConsumerAgent] = []
 
     for i, spec in enumerate(specs):
-        # Last spec absorbs rounding remainder
         if i < len(specs) - 1:
             count = round(population_size * spec.proportion / total)
         else:
             count = population_size - len(agents)
 
         for _ in range(count):
-            agents.append(Agent(
-                agent_id=agent_id,
+            agents.append(ConsumerAgent(
+                agent_id=len(agents),
                 spec=spec,
+                market_name=market_name,
                 seed=rng.randint(0, 2**31),
             ))
-            agent_id += 1
 
     return agents
