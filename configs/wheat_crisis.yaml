@@ -1,0 +1,269 @@
+# ---------------------------------------------------------------------------
+# Scenario: Wheat Export Ban Crisis
+#
+# Inspired by: Russia/Ukraine 2022, India 2022 wheat export bans.
+# A major exporter suddenly exits the global market. An importing country
+# faces a 40% stock drawdown overnight; domestic producers must bridge the
+# gap but carry 4-6 round production lags (months in reality).
+#
+# Expected dynamics:
+#   - Sharp price spike in first 5 rounds
+#   - Panic hoarding amplifies the shortage
+#   - Institutional buyers crowd out poor households
+#   - Domestic farmers ramp, overshoot, eventual modest glut
+#   - Price normalises above pre-crisis baseline (structural shift)
+# ---------------------------------------------------------------------------
+
+seed: 7
+rounds: 50
+
+markets:
+  wheat:
+    initial_price: 1.00
+    initial_stock: 4000          # importing country holds ~4 weeks buffer
+    production_cost: 0.70        # blended domestic cost; imports were cheaper
+
+    price_algorithm:
+      type: stock_based
+      target_stock_days: 14      # food-security buffer: 2 weeks of demand
+      elasticity: 0.30           # wheat is staple — moderate price sensitivity
+      demand_window: 4
+      min_price: 0.30            # floor: subsidised staple, gov't won't let it go below
+      max_price: 5.00            # ceiling: price controls kick in around here
+
+suppliers:
+  - id: domestic_large_farm
+    count: 3
+    market: wheat
+    production_cost: 0.75        # domestic costs above pre-crisis import price
+    initial_production_rate: 150  # total domestic baseline: 3×150=450/round
+    production_lag: 5            # ~5 months: planting → harvest
+    max_ramp_up: 0.08            # land is finite; slow to expand
+    max_ramp_down: 0.15
+    bankruptcy_threshold: 10     # large farms survive longer on reserves
+    restart_rate: 20
+    restart_margin: 1.20         # re-enter at slim margin (patriotic supply)
+    min_production_rate: 30      # never fully idles; maintaining soil/equipment
+    rules:
+      - condition: "consecutive_loss_rounds >= 7"
+        action: decrease_production
+        adjustment_factor: -0.15
+        label: "sustained losses — cut to preserve cash"
+      - condition: "own_pipeline_rounds > 7"
+        action: maintain
+        adjustment_factor: 0.0
+        label: "pipeline loaded — hold"
+      - condition: "margin > 1.8 and stock_ratio < 0.8"
+        action: increase_production
+        adjustment_factor: 0.08
+        label: "crisis prices + acute shortage — max expansion"
+      - condition: "margin > 1.4 and stock_ratio < 1.2"
+        action: increase_production
+        adjustment_factor: 0.05
+        label: "good margin + shortage — expand"
+      - condition: "margin > 1.1 and stock_ratio < 1.0"
+        action: increase_production
+        adjustment_factor: 0.02
+        label: "thin margin + shortage — cautious growth"
+      - condition: "margin < 1.0"
+        action: decrease_production
+        adjustment_factor: -0.12
+        label: "below cost — cut"
+      - condition: "stock_ratio > 2.5"
+        action: decrease_production
+        adjustment_factor: -0.08
+        label: "glut forming — pull back"
+
+  - id: small_holder_farm
+    count: 8
+    market: wheat
+    production_cost: 0.85        # smallholders; less efficient, higher costs
+    initial_production_rate: 55  # total: 8×55=440/round; combined supply ≈ 890
+    production_lag: 3            # can respond faster (smaller plots)
+    max_ramp_up: 0.12
+    max_ramp_down: 0.35
+    bankruptcy_threshold: 3      # very thin margins; exit quickly under loss
+    restart_rate: 6
+    restart_margin: 1.60         # need strong price signal to risk re-entry
+    min_production_rate: 3
+    rules:
+      - condition: "consecutive_loss_rounds >= 2"
+        action: decrease_production
+        adjustment_factor: -0.35
+        label: "can't absorb losses — cut hard"
+      - condition: "own_pipeline_rounds > 4"
+        action: maintain
+        adjustment_factor: 0.0
+        label: "pipeline full"
+      - condition: "margin > 2.0 and stock_ratio < 1.0"
+        action: increase_production
+        adjustment_factor: 0.12
+        label: "crisis opportunity — ramp hard"
+      - condition: "margin > 1.5 and stock_ratio < 1.5"
+        action: increase_production
+        adjustment_factor: 0.08
+        label: "good margin — expand"
+      - condition: "margin < 1.05"
+        action: decrease_production
+        adjustment_factor: -0.30
+        label: "barely breaking even — cut"
+      - condition: "stock_ratio > 2.0"
+        action: decrease_production
+        adjustment_factor: -0.18
+        label: "glut — pull back"
+
+# ---------------------------------------------------------------------------
+# Consumers: 1200 agents
+# Total baseline supply ≈ 890/round, demand ≈ 900/round → near-equilibrium
+# ---------------------------------------------------------------------------
+consumers:
+  size: 1200
+
+  agent_types:
+
+    # --- PANIC HOARDERS (25%) -----------------------------------------------
+    # High proportion in a food-insecure environment
+    - id: panic_hoarder
+      proportion: 0.25
+      mode: deterministic
+      base_quantity: 1.0
+      rules:
+        - condition: "price_change_pct > 10 or stock_ratio < 0.6"
+          action: buy_more
+          quantity_factor: 4.0
+          label: "full panic — fill the pantry"
+        - condition: "price_change_pct > 5 or stock_ratio < 0.9"
+          action: buy_more
+          quantity_factor: 2.5
+          label: "elevated anxiety — stockpile"
+        - condition: "price_change_pct > 1"
+          action: buy_more
+          quantity_factor: 1.5
+          label: "any rise — modest extra"
+        - condition: "stock_ratio > 1.5 and price_change_pct < -3"
+          action: buy_less
+          quantity_factor: 0.7
+          label: "normalising — draw down stockpile"
+
+    # --- INSTITUTIONAL BUYERS: mills, bakeries (20%) -----------------------
+    # Must buy regardless — shutting a flour mill is catastrophic
+    - id: institutional_buyer
+      proportion: 0.20
+      mode: deterministic
+      base_quantity: 1.8           # larger per-unit demand
+      rules:
+        - condition: "stock_ratio < 0.5"
+          action: buy_more
+          quantity_factor: 2.5
+          label: "acute shortage — secure supply at any price"
+        - condition: "stock_ratio < 1.0"
+          action: buy_more
+          quantity_factor: 1.6
+          label: "below buffer — top up aggressively"
+        - condition: "price_change_pct > 20"
+          action: buy_less
+          quantity_factor: 0.85
+          label: "extreme price: shave margins slightly"
+        - condition: "stock_ratio > 2.0"
+          action: buy_less
+          quantity_factor: 0.8
+          label: "comfortable stock — ease purchasing"
+
+    # --- BUDGET CONSTRAINED HOUSEHOLDS (30%) --------------------------------
+    - id: poor_household
+      proportion: 0.30
+      mode: deterministic
+      base_quantity: 0.8
+      rules:
+        - condition: "price_change_pct > 25"
+          action: buy_less
+          quantity_factor: 0.25
+          label: "can no longer afford — severe cutback"
+        - condition: "price_change_pct > 15"
+          action: buy_less
+          quantity_factor: 0.45
+          label: "major cutback"
+        - condition: "price_change_pct > 5"
+          action: buy_less
+          quantity_factor: 0.70
+          label: "moderate cutback"
+        - condition: "price_change_pct < -10"
+          action: buy_more
+          quantity_factor: 1.1
+          label: "prices falling — restock"
+
+    # --- ADAPTIVE MIDDLE CLASS (15%) ----------------------------------------
+    - id: adaptive_household
+      proportion: 0.15
+      mode: mixed
+      base_quantity: 1.0
+      rules:
+        - condition: "price_change_pct > 30 or stock_ratio < 0.4"
+          action: buy_more
+          quantity_factor: 2.0
+          label: "crisis: secure supply"
+        - condition: "price_change_pct < -15"
+          action: buy_more
+          quantity_factor: 1.3
+          label: "price recovery — restock"
+      stochastic_actions:
+        - action: buy_more
+          weight: 0.20
+          quantity_factor: 1.2
+        - action: buy_less
+          weight: 0.30
+          quantity_factor: 0.80
+        - action: hold
+          weight: 0.25
+          quantity_factor: 0.0
+        - action: no_change
+          weight: 0.25
+          quantity_factor: 1.0
+
+    # --- SPECULATORS / TRADERS (10%) ----------------------------------------
+    - id: speculator
+      proportion: 0.10
+      mode: deterministic
+      base_quantity: 1.0
+      rules:
+        - condition: "price_change_pct > 8 and stock_ratio < 1.2"
+          action: buy_more
+          quantity_factor: 3.5
+          label: "momentum + scarcity — accumulate"
+        - condition: "price_change_pct > 3"
+          action: buy_more
+          quantity_factor: 2.0
+          label: "uptrend — ride it"
+        - condition: "price_change_pct < -5"
+          action: buy_less
+          quantity_factor: 0.5
+          label: "trend broken — liquidate"
+        - condition: "stock_ratio > 2.0"
+          action: buy_less
+          quantity_factor: 0.6
+          label: "glut signal — exit"
+
+shocks:
+  - round: 0
+    type: stock_shock
+    market: wheat
+    delta_pct: -40.0
+    description: "Export ban: major supplier exits — 40% of buffer lost overnight"
+
+  - round: 2
+    type: price_shock
+    market: wheat
+    delta_pct: 20.0
+    description: "News spreads: global markets reprice on shortage"
+
+  - round: 20
+    type: cost_shock
+    market: wheat
+    delta_pct: 15.0
+    description: "Fertiliser & fuel costs spike (collateral of the crisis)"
+
+  - round: 35
+    type: stock_shock
+    market: wheat
+    delta_pct: 15.0
+    description: "Emergency import deal: partial alternative supply secured"

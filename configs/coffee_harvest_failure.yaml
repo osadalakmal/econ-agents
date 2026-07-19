@@ -1,0 +1,291 @@
+# ---------------------------------------------------------------------------
+# Scenario: Coffee Harvest Failure
+#
+# Inspired by: 2021 Brazil frost / 2022 drought destroying Arabica crops;
+# 2023-24 Vietnam Robusta supply crunch.
+#
+# Coffee has genuine seasonal dynamics: a harvest failure in Brazil (world's
+# largest producer, ~35% of supply) cannot be covered by existing stock for
+# long. Production recovery takes a full growing cycle (lag=6 rounds).
+# Meanwhile consumers are addicted — cafes and daily drinkers absorb price
+# rises grudgingly; only casual buyers switch away.
+#
+# Expected dynamics:
+#   - r3: Frost wipes 50% of Brazilian crop (stock_shock + cost_shock)
+#   - Price spikes sharply; café chains absorb cost, pass some to customers
+#   - Small roasters and independent cafes go under (budget_constrained)
+#   - Vietnam/Colombia suppliers ramp but can only partially offset
+#   - r20: new Brazilian crop plants established (cost_shock relief)
+#   - r30: first recovery harvest arrives → price normalises
+#   - r40: Vietnam weather event tightens market again (secondary shock)
+# ---------------------------------------------------------------------------
+
+seed: 2021
+rounds: 55
+
+markets:
+  coffee:
+    initial_price: 1.00
+    initial_stock: 3500          # global roasters hold ~3-4 weeks green coffee
+    production_cost: 0.58        # blended C-market production cost
+
+    price_algorithm:
+      type: stock_based
+      target_stock_days: 12      # roasters typically want 3-month green coffee buffer
+      elasticity: 0.22           # fairly inelastic (addictive good)
+      demand_window: 4
+      min_price: 0.35            # floor: even in glut, specialty value holds
+      max_price: 5.50            # ceiling: extreme; switches some demand to tea
+
+suppliers:
+  # Brazil-type: large, efficient, long growing cycle
+  - id: brazil_farm
+    count: 3
+    market: coffee
+    production_cost: 0.52        # low labour/land costs in cerrado
+    initial_production_rate: 300  # 3×300=900/round before frost
+    production_lag: 6            # one growing season to recover output
+    max_ramp_up: 0.08            # limited by land, irrigation, labour
+    max_ramp_down: 0.20
+    bankruptcy_threshold: 12     # large farms; subsidised credit in Brazil
+    restart_rate: 40
+    restart_margin: 1.20
+    min_production_rate: 50      # skeleton crew keeps trees alive
+    rules:
+      - condition: "consecutive_loss_rounds >= 8"
+        action: decrease_production
+        adjustment_factor: -0.18
+        label: "prolonged losses — reduce planted area"
+      - condition: "own_pipeline_rounds > 8"
+        action: maintain
+        adjustment_factor: 0.0
+        label: "pipeline full — hold"
+      - condition: "margin > 2.5 and stock_ratio < 0.8"
+        action: increase_production
+        adjustment_factor: 0.08
+        label: "crisis premium + acute shortage — max replant"
+      - condition: "margin > 1.8 and stock_ratio < 1.2"
+        action: increase_production
+        adjustment_factor: 0.05
+        label: "strong incentive — expand"
+      - condition: "margin > 1.2 and stock_ratio < 1.0"
+        action: increase_production
+        adjustment_factor: 0.02
+        label: "profitable + shortage — careful growth"
+      - condition: "margin < 1.0"
+        action: decrease_production
+        adjustment_factor: -0.15
+        label: "below cost — reduce harvest"
+      - condition: "stock_ratio > 2.5"
+        action: decrease_production
+        adjustment_factor: -0.08
+        label: "global oversupply — pull back"
+
+  # Vietnam / Colombia type: faster-responding, higher-cost robusta/blends
+  - id: origin_farm
+    count: 6
+    market: coffee
+    production_cost: 0.70        # robusta is cheaper but labour costs higher
+    initial_production_rate: 80  # 6×80=480/round
+    production_lag: 4
+    max_ramp_up: 0.14
+    max_ramp_down: 0.35
+    bankruptcy_threshold: 5
+    restart_rate: 10
+    restart_margin: 1.55
+    min_production_rate: 5
+    rules:
+      - condition: "consecutive_loss_rounds >= 3"
+        action: decrease_production
+        adjustment_factor: -0.35
+        label: "can't sustain losses — cut hard"
+      - condition: "own_pipeline_rounds > 5"
+        action: maintain
+        adjustment_factor: 0.0
+        label: "pipeline loaded"
+      - condition: "margin > 2.2 and stock_ratio < 0.9"
+        action: increase_production
+        adjustment_factor: 0.14
+        label: "crisis gap — grab market share"
+      - condition: "margin > 1.6 and stock_ratio < 1.4"
+        action: increase_production
+        adjustment_factor: 0.09
+        label: "good conditions — ramp"
+      - condition: "margin > 1.2 and stock_ratio < 1.0"
+        action: increase_production
+        adjustment_factor: 0.05
+        label: "profitable + shortage"
+      - condition: "margin < 1.08"
+        action: decrease_production
+        adjustment_factor: -0.28
+        label: "thin margin — cut"
+      - condition: "stock_ratio > 2.2"
+        action: decrease_production
+        adjustment_factor: -0.15
+        label: "glut — retreat"
+
+# ---------------------------------------------------------------------------
+# Consumers: 1000 agents
+# Combined baseline supply ≈ 1380/round; demand ≈ 1000/round → small surplus
+# Post-frost supply collapses to ~600-700; acute shortage begins
+# ---------------------------------------------------------------------------
+consumers:
+  size: 1000
+
+  agent_types:
+
+    # --- DAILY COFFEE ADDICTS (35%) — near-zero elasticity -----------------
+    - id: daily_addict
+      proportion: 0.35
+      mode: deterministic
+      base_quantity: 1.0
+      rules:
+        - condition: "price_change_pct > 40"
+          action: buy_less
+          quantity_factor: 0.80
+          label: "even addicts cut one cup at extreme prices"
+        - condition: "price_change_pct > 20"
+          action: buy_less
+          quantity_factor: 0.92
+          label: "grumbling but mostly absorbing the cost"
+        - condition: "stock_ratio < 0.5"
+          action: buy_more
+          quantity_factor: 1.4
+          label: "shortage panic — stockpile home supply"
+        - condition: "price_change_pct < -10"
+          action: buy_more
+          quantity_factor: 1.1
+          label: "price easing — stock up more"
+
+    # --- CAFÉ CHAINS / COMMERCIAL BUYERS (25%) ----------------------------
+    # Large purchasers; hedge forward but must still buy spot
+    - id: cafe_chain
+      proportion: 0.25
+      mode: deterministic
+      base_quantity: 2.0          # bulk purchasers
+      rules:
+        - condition: "stock_ratio < 0.4"
+          action: buy_more
+          quantity_factor: 2.0
+          label: "critical: cafes cannot close — buy at any price"
+        - condition: "stock_ratio < 0.8"
+          action: buy_more
+          quantity_factor: 1.5
+          label: "below 4-week buffer — top up aggressively"
+        - condition: "price_change_pct > 30"
+          action: buy_less
+          quantity_factor: 0.80
+          label: "squeeze margins: smaller menu, lighter roasts"
+        - condition: "price_change_pct < -15"
+          action: buy_more
+          quantity_factor: 1.4
+          label: "prices recovering — rebuild forward stock"
+
+    # --- CASUAL / OCCASIONAL DRINKERS (20%) --------------------------------
+    - id: casual_drinker
+      proportion: 0.20
+      mode: deterministic
+      base_quantity: 0.7
+      rules:
+        - condition: "price_change_pct > 20"
+          action: buy_less
+          quantity_factor: 0.45
+          label: "switch to tea: too expensive now"
+        - condition: "price_change_pct > 10"
+          action: buy_less
+          quantity_factor: 0.70
+          label: "cut back on coffee luxuries"
+        - condition: "price_change_pct < -15"
+          action: buy_more
+          quantity_factor: 1.3
+          label: "coffee affordable again — back to it"
+        - condition: "price_change_pct < -5"
+          action: buy_more
+          quantity_factor: 1.1
+          label: "slight recovery — try again"
+
+    # --- SPECIALTY / THIRD-WAVE BUYERS (10%) --------------------------------
+    # Pay premium for quality; price-insensitive but supply-sensitive
+    - id: specialty_buyer
+      proportion: 0.10
+      mode: deterministic
+      base_quantity: 0.8
+      rules:
+        - condition: "stock_ratio < 0.5"
+          action: buy_more
+          quantity_factor: 2.5
+          label: "specialty supply scarce — secure micro-lot allocations"
+        - condition: "stock_ratio < 0.8"
+          action: buy_more
+          quantity_factor: 1.6
+          label: "building reserve of preferred origins"
+        - condition: "price_change_pct > 50"
+          action: buy_less
+          quantity_factor: 0.75
+          label: "even specialty buyers have limits"
+        - condition: "stock_ratio > 2.0"
+          action: buy_less
+          quantity_factor: 0.8
+          label: "ample supply — no need to over-buy"
+
+    # --- BLENDERS / TRADERS (10%) ------------------------------------------
+    - id: commodity_trader
+      proportion: 0.10
+      mode: mixed
+      base_quantity: 1.2
+      rules:
+        - condition: "price_change_pct > 15 and stock_ratio < 1.0"
+          action: buy_more
+          quantity_factor: 3.0
+          label: "shortage + rising price — accumulate to resell"
+        - condition: "price_change_pct < -10"
+          action: buy_less
+          quantity_factor: 0.4
+          label: "falling price — liquidate long positions"
+      stochastic_actions:
+        - action: buy_more
+          weight: 0.30
+          quantity_factor: 1.5
+        - action: buy_less
+          weight: 0.30
+          quantity_factor: 0.70
+        - action: no_change
+          weight: 0.40
+          quantity_factor: 1.0
+
+shocks:
+  - round: 3
+    type: stock_shock
+    market: coffee
+    delta_pct: -50.0
+    description: "Brazil frost: catastrophic crop failure — 50% of harvest lost"
+
+  - round: 4
+    type: cost_shock
+    market: coffee
+    delta_pct: 18.0
+    description: "Post-frost recovery costs: replanting, fertiliser, logistics spike"
+
+  - round: 20
+    type: cost_shock
+    market: coffee
+    delta_pct: -12.0
+    description: "New planting cycle establishes: first crop offsets some cost pressure"
+
+  - round: 30
+    type: stock_shock
+    market: coffee
+    delta_pct: 20.0
+    description: "Brazil recovery harvest arrives: first meaningful new supply"
+
+  - round: 40
+    type: stock_shock
+    market: coffee
+    delta_pct: -20.0
+    description: "Vietnam drought: robusta crop fails — secondary supply shock"
+
+  - round: 45
+    type: price_shock
+    market: coffee
+    delta_pct: 15.0
+    description: "Speculative futures rally on Vietnam news"
