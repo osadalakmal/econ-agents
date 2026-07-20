@@ -116,7 +116,7 @@ consumers:
       planning_horizon_range: [1, 8]
       llm:
         base_url: "http://localhost:1234/v1"
-        model: "qwen/qwen3-4b-thinking-2507:2"
+        model: "qwen/qwen3-vl-4b"
         timeout_s: 8.0
         max_retries: 2
 
